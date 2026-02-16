@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import sys
 
 import cv2
 import mediapipe as mp
@@ -18,10 +19,16 @@ class MediaPipePostureDetector(BasePostureDetector):
         min_tracking_confidence: float = 0.5,
         slouch_threshold: float = 0.08,
     ) -> None:
+        if sys.version_info >= (3, 12):
+            raise RuntimeError(
+                "Python 3.12 detected. This project currently requires Python 3.10/3.11 "
+                "for MediaPipe Pose (solutions API). Create a 3.11 venv and reinstall dependencies."
+            )
+
         if not hasattr(mp, "solutions"):
             raise RuntimeError(
                 "Installed mediapipe package does not expose `mediapipe.solutions`. "
-                "Use a compatible version: `pip install \"mediapipe>=0.10.14,<0.10.31\"`."
+                "Use Python 3.10/3.11 and reinstall dependencies."
             )
 
         self.slouch_threshold = slouch_threshold

@@ -18,18 +18,22 @@ This repository is now set up for live webcam benchmarking with the first model:
 
 ## Quick Start (Webcam)
 
-1. Create and activate a Python 3.10+ environment.
+1. Create and activate a Python 3.11 environment (recommended).
 2. Install dependencies:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If MediaPipe was already installed, force reinstall the pinned version:
+If MediaPipe was already installed in this environment, force reinstall:
 
 ```bash
 pip install --upgrade --force-reinstall "mediapipe>=0.10.14,<0.10.31"
 ```
+
+Note: Python 3.12 currently installs a MediaPipe package variant without `mediapipe.solutions`, which is incompatible with this benchmark's MediaPipe backend.
 
 3. Run MediaPipe benchmark on webcam:
 

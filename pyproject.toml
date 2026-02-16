@@ -7,7 +7,7 @@ name = "noslouchbench"
 version = "0.1.0"
 description = "Reproducible posture detection benchmarking framework"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.12"
 dependencies = [
   "mediapipe>=0.10.14,<0.10.31",
   "opencv-python>=4.8.0",
