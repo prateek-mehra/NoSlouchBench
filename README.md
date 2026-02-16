@@ -47,6 +47,12 @@ python scripts/download_pose_landmarker.py
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --duration-minutes 60 --display
 ```
 
+For Logitech C270 specifically:
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display
+```
+
 4. For a long-run weekly session, you can keep it running with no duration cap:
 
 ```bash

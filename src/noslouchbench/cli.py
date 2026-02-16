@@ -13,6 +13,11 @@ def parse_args() -> argparse.Namespace:
     run = sub.add_parser("run-webcam", help="Run posture benchmark on webcam")
     run.add_argument("--model", default="yolo-pose", help="Model name (e.g., yolo-pose)")
     run.add_argument("--camera-id", type=int, default=0, help="Webcam device id")
+    run.add_argument(
+        "--camera-name",
+        default=None,
+        help='Preferred webcam name (e.g., "Logitech C270"). Resolves to camera index when possible.',
+    )
     run.add_argument("--duration-minutes", type=float, default=None, help="Stop automatically after N minutes")
     run.add_argument("--frame-skip", type=int, default=0, help="Process every N+1 frame")
     run.add_argument("--session-tag", default=None, help="Optional run tag appended to session id")
@@ -28,6 +33,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_webcam(args: argparse.Namespace) -> int:
+    from noslouchbench.camera import resolve_camera_id
     from noslouchbench.config import load_model_config
     from noslouchbench.detectors.factory import build_detector
     from noslouchbench.runner import WebcamBenchmarkRunner
@@ -35,12 +41,14 @@ def run_webcam(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
     model_cfg = load_model_config(config_path, args.model)
     detector = build_detector(args.model, model_cfg=model_cfg)
+    camera_id = resolve_camera_id(args.camera_id, args.camera_name)
+    print(f"Using camera_id={camera_id}")
 
     runner = WebcamBenchmarkRunner(
         detector=detector,
         model_name=args.model,
         output_dir=Path(args.output_dir),
-        camera_id=args.camera_id,
+        camera_id=camera_id,
         display=args.display,
         duration_minutes=args.duration_minutes,
         frame_skip=args.frame_skip,
