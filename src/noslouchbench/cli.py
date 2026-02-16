@@ -11,7 +11,7 @@ def parse_args() -> argparse.Namespace:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run-webcam", help="Run posture benchmark on webcam")
-    run.add_argument("--model", default="mediapipe", help="Model name (e.g., mediapipe)")
+    run.add_argument("--model", default="yolo-pose", help="Model name (e.g., yolo-pose)")
     run.add_argument("--camera-id", type=int, default=0, help="Webcam device id")
     run.add_argument("--duration-minutes", type=float, default=None, help="Stop automatically after N minutes")
     run.add_argument("--frame-skip", type=int, default=0, help="Process every N+1 frame")

@@ -5,6 +5,12 @@ models:
     slouch_threshold: 0.38
     task_model_path: models/mediapipe/pose_landmarker_lite.task
   yolo-pose:
-    enabled: false
+    model_path: yolo11n-pose.pt
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+    keypoint_confidence_threshold: 0.25
+    slouch_threshold: 0.38
+    imgsz: 640
+    device: cpu
   openpose:
     enabled: false

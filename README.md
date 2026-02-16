@@ -11,9 +11,9 @@ The goal is fair, deployment-aware comparison of real-time posture detection sys
 
 ## Current Status
 
-This repository is now set up for live webcam benchmarking with the first model:
-- `mediapipe` (implemented)
-- `yolo-pose` (scaffolded, not yet implemented)
+This repository is now set up for live webcam benchmarking with:
+- `yolo-pose` (implemented, default)
+- `mediapipe` (implemented, optional fallback)
 - `openpose` (scaffolded, not yet implemented)
 
 ## Quick Start (Webcam)
@@ -27,28 +27,30 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If MediaPipe was already installed in this environment, force reinstall:
+YOLO-Pose model weights are auto-downloaded by Ultralytics on first run.
+
+If MediaPipe fallback is needed, force reinstall:
 
 ```bash
 pip install --upgrade --force-reinstall "mediapipe>=0.10.14,<0.10.31"
 ```
 
-Download the MediaPipe Tasks pose model (required when your install is tasks-only):
+Download the MediaPipe Tasks pose model only if using `--model mediapipe` with tasks-only MediaPipe:
 
 ```bash
 python scripts/download_pose_landmarker.py
 ```
 
-3. Run MediaPipe benchmark on webcam:
+3. Run YOLO-Pose benchmark on webcam (default model):
 
 ```bash
-PYTHONPATH=src python -m noslouchbench.cli run-webcam --model mediapipe --duration-minutes 60 --display
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --duration-minutes 60 --display
 ```
 
 4. For a long-run weekly session, you can keep it running with no duration cap:
 
 ```bash
-PYTHONPATH=src python -m noslouchbench.cli run-webcam --model mediapipe --display
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --display
 ```
 
 Press `q` in the display window to stop.
@@ -77,9 +79,9 @@ This produces:
 - Slouch ratio
 - Upright ratio
 
-## Posture Rule (MediaPipe)
+## Posture Rule (YOLO-Pose)
 
-`mediapipe` currently classifies slouch by a normalized geometric rule:
+`yolo-pose` currently classifies slouch by a normalized geometric rule:
 
 - Designed for side-view webcam setups.
 - Uses only body-side landmarks (ear, shoulder, hip) and picks the more visible side.
@@ -90,9 +92,9 @@ This produces:
 - Classifies as `slouch` when `slouch_score >= slouch_threshold`.
 
 Default threshold is `0.38` (tuned for side camera).  
-Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.mediapipe.slouch_threshold`.
+Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.yolo-pose.slouch_threshold`.
 
 ## Implementation Notes
 
-- The MediaPipe detector is adapted from the same local-inference approach used in your `focusguard` codebase (`mediapipe` + webcam loop).
-- Posture logic currently uses pose landmarks and a configurable slouch threshold based on head-vs-shoulder vertical offset normalized by torso length.
+- YOLO-Pose is now the primary detector for webcam benchmarking.
+- Posture logic uses side-view geometry from ear/shoulder/hip landmarks with configurable slouch thresholding.
