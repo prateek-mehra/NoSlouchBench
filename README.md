@@ -77,6 +77,16 @@ This produces:
 - Slouch ratio
 - Upright ratio
 
+## Posture Rule (MediaPipe)
+
+`mediapipe` currently classifies slouch by a normalized geometric rule:
+
+- Compute `head_above_shoulder = (shoulder_mid_y - nose_y) / torso_len`
+- Classify as `slouch` when `head_above_shoulder < head_above_shoulder_threshold`
+
+Default threshold is `0.42` (tighter than earlier baseline).  
+Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.mediapipe.slouch_threshold`.
+
 ## Implementation Notes
 
 - The MediaPipe detector is adapted from the same local-inference approach used in your `focusguard` codebase (`mediapipe` + webcam loop).

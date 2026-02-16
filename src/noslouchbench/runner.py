@@ -168,6 +168,7 @@ class WebcamBenchmarkRunner:
     def _draw_overlay(frame, record: dict) -> None:
         label = record["posture_label"]
         color = (0, 0, 255) if label == "slouch" else (0, 255, 0)
+        metadata = record.get("metadata", {})
         cv2.putText(
             frame,
             f"Model: {record['model_name']}",
@@ -205,9 +206,39 @@ class WebcamBenchmarkRunner:
             2,
         )
 
+        head_above = metadata.get("head_above_shoulder")
+        head_thr = metadata.get("head_above_shoulder_threshold")
+        if head_above is not None and head_thr is not None:
+            cv2.putText(
+                frame,
+                f"HeadAboveShoulder: {head_above:.3f} (thr {head_thr:.3f})",
+                (16, 148),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (255, 200, 120),
+                2,
+            )
+
+        # Draw and label the exact landmarks used by the posture logic.
+        points = metadata.get("landmarks_norm", {})
+        if points:
+            h, w, _ = frame.shape
+            for part, xy in points.items():
+                x = int(float(xy[0]) * w)
+                y = int(float(xy[1]) * h)
+                cv2.circle(frame, (x, y), 5, (0, 255, 255), -1)
+                cv2.putText(
+                    frame,
+                    part,
+                    (x + 8, y - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 255, 255),
+                    1,
+                )
+
     @staticmethod
     def _build_session_id(model_name: str, session_tag: str | None) -> str:
         t = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         suffix = f"_{session_tag}" if session_tag else ""
         return f"{model_name}_{t}{suffix}"
-
