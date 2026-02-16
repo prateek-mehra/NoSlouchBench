@@ -18,6 +18,12 @@ class MediaPipePostureDetector(BasePostureDetector):
         min_tracking_confidence: float = 0.5,
         slouch_threshold: float = 0.08,
     ) -> None:
+        if not hasattr(mp, "solutions"):
+            raise RuntimeError(
+                "Installed mediapipe package does not expose `mediapipe.solutions`. "
+                "Use a compatible version: `pip install \"mediapipe>=0.10.14,<0.10.31\"`."
+            )
+
         self.slouch_threshold = slouch_threshold
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
@@ -76,4 +82,3 @@ class MediaPipePostureDetector(BasePostureDetector):
 
     def close(self) -> None:
         self.pose.close()
-

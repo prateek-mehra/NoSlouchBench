@@ -25,6 +25,12 @@ This repository is now set up for live webcam benchmarking with the first model:
 pip install -r requirements.txt
 ```
 
+If MediaPipe was already installed, force reinstall the pinned version:
+
+```bash
+pip install --upgrade --force-reinstall "mediapipe>=0.10.14,<0.10.31"
+```
+
 3. Run MediaPipe benchmark on webcam:
 
 ```bash
