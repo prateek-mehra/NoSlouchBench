@@ -3,6 +3,7 @@ models:
     min_detection_confidence: 0.5
     min_tracking_confidence: 0.5
     slouch_threshold: 0.08
+    task_model_path: models/mediapipe/pose_landmarker_lite.task
   yolo-pose:
     enabled: false
   openpose:

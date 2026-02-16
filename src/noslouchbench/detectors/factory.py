@@ -13,6 +13,7 @@ def build_detector(model_name: str, model_cfg: dict | None = None) -> BasePostur
             min_detection_confidence=float(cfg.get("min_detection_confidence", 0.5)),
             min_tracking_confidence=float(cfg.get("min_tracking_confidence", 0.5)),
             slouch_threshold=float(cfg.get("slouch_threshold", 0.08)),
+            task_model_path=cfg.get("task_model_path"),
         )
 
     if key in {"yolo-pose", "openpose"}:
@@ -22,4 +23,3 @@ def build_detector(model_name: str, model_cfg: dict | None = None) -> BasePostur
         )
 
     raise ValueError(f"Unsupported model: {model_name}")
-

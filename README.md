@@ -33,18 +33,22 @@ If MediaPipe was already installed in this environment, force reinstall:
 pip install --upgrade --force-reinstall "mediapipe>=0.10.14,<0.10.31"
 ```
 
-Note: Python 3.12 currently installs a MediaPipe package variant without `mediapipe.solutions`, which is incompatible with this benchmark's MediaPipe backend.
+Download the MediaPipe Tasks pose model (required when your install is tasks-only):
+
+```bash
+python scripts/download_pose_landmarker.py
+```
 
 3. Run MediaPipe benchmark on webcam:
 
 ```bash
-python -m noslouchbench.cli run-webcam --model mediapipe --duration-minutes 60 --display
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model mediapipe --duration-minutes 60 --display
 ```
 
 4. For a long-run weekly session, you can keep it running with no duration cap:
 
 ```bash
-python -m noslouchbench.cli run-webcam --model mediapipe --display
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model mediapipe --display
 ```
 
 Press `q` in the display window to stop.
@@ -58,7 +62,7 @@ Each run generates:
 To aggregate model summaries after a week:
 
 ```bash
-python -m noslouchbench.cli summarize --input-dir outputs/summaries
+PYTHONPATH=src python -m noslouchbench.cli summarize --input-dir outputs/summaries
 ```
 
 This produces:
