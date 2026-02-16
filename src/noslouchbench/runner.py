@@ -206,27 +206,41 @@ class WebcamBenchmarkRunner:
             2,
         )
 
-        head_above = metadata.get("head_above_shoulder")
-        head_thr = metadata.get("head_above_shoulder_threshold")
-        if head_above is not None and head_thr is not None:
+        score = metadata.get("slouch_score")
+        score_thr = metadata.get("slouch_score_threshold")
+        if score is not None and score_thr is not None:
             cv2.putText(
                 frame,
-                f"HeadAboveShoulder: {head_above:.3f} (thr {head_thr:.3f})",
+                f"SlouchScore: {score:.3f} (thr {score_thr:.3f})",
                 (16, 148),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 (255, 200, 120),
                 2,
             )
-        visible_face = metadata.get("visible_face_points")
-        if visible_face is not None:
+        side = metadata.get("selected_side")
+        if side is not None:
             cv2.putText(
                 frame,
-                f"Visible face points: {visible_face}/7",
+                f"Side used: {side}",
                 (16, 178),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 (200, 255, 200),
+                2,
+            )
+
+        hfo = metadata.get("head_forward_offset")
+        lean = metadata.get("torso_lean_angle_deg")
+        neck = metadata.get("neck_drop")
+        if hfo is not None and lean is not None and neck is not None:
+            cv2.putText(
+                frame,
+                f"HFwd:{hfo:.2f} Lean:{lean:.1f}deg Neck:{neck:.2f}",
+                (16, 208),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (120, 220, 255),
                 2,
             )
 

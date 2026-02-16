@@ -81,12 +81,15 @@ This produces:
 
 `mediapipe` currently classifies slouch by a normalized geometric rule:
 
-- Build a face anchor from multiple facial landmarks:
-  `median(nose, left_eye, right_eye, left_ear, right_ear, mouth_left, mouth_right)`
-- Compute `head_above_shoulder = (shoulder_mid_y - face_anchor_y) / torso_len`
-- Classify as `slouch` when `head_above_shoulder < head_above_shoulder_threshold`
+- Designed for side-view webcam setups.
+- Uses only body-side landmarks (ear, shoulder, hip) and picks the more visible side.
+- Computes a weighted slouch score from:
+  - head-forward offset (`|ear_x - shoulder_x| / torso_len`)
+  - torso lean angle (shoulder-hip line vs vertical)
+  - neck drop (`max(0, ear_y - shoulder_y) / torso_len`)
+- Classifies as `slouch` when `slouch_score >= slouch_threshold`.
 
-Default threshold is `0.50` (more sensitive to slouch).  
+Default threshold is `0.38` (tuned for side camera).  
 Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.mediapipe.slouch_threshold`.
 
 ## Implementation Notes

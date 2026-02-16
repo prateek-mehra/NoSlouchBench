@@ -22,18 +22,13 @@ class MediaPipePostureDetector(BasePostureDetector):
         self,
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
-        slouch_threshold: float = 0.50,
+        slouch_threshold: float = 0.38,
         task_model_path: str | None = None,
     ) -> None:
         self.slouch_threshold = slouch_threshold
         self.min_visibility = 0.2
-        self.nose = 0
-        self.left_eye = 2
-        self.right_eye = 5
         self.left_ear = 7
         self.right_ear = 8
-        self.mouth_left = 9
-        self.mouth_right = 10
         self.left_shoulder = 11
         self.right_shoulder = 12
         self.left_hip = 23
@@ -124,13 +119,8 @@ class MediaPipePostureDetector(BasePostureDetector):
             lm = results.pose_landmarks[0]
 
         tracked = {
-            "nose": self._lm_xyv(lm[self.nose]),
-            "left_eye": self._lm_xyv(lm[self.left_eye]),
-            "right_eye": self._lm_xyv(lm[self.right_eye]),
             "left_ear": self._lm_xyv(lm[self.left_ear]),
             "right_ear": self._lm_xyv(lm[self.right_ear]),
-            "mouth_left": self._lm_xyv(lm[self.mouth_left]),
-            "mouth_right": self._lm_xyv(lm[self.mouth_right]),
             "left_shoulder": self._lm_xyv(lm[self.left_shoulder]),
             "right_shoulder": self._lm_xyv(lm[self.right_shoulder]),
             "left_hip": self._lm_xyv(lm[self.left_hip]),
@@ -147,31 +137,62 @@ class MediaPipePostureDetector(BasePostureDetector):
                 metadata={"reason": "low_landmark_visibility", "backend": self.backend},
             )
 
-        face_keys = ("nose", "left_eye", "right_eye", "left_ear", "right_ear", "mouth_left", "mouth_right")
-        visible_face = [tracked[k] for k in face_keys if tracked[k][2] >= self.min_visibility]
-        if len(visible_face) < 4:
+        left_side_ok = min(
+            tracked["left_ear"][2], tracked["left_shoulder"][2], tracked["left_hip"][2]
+        ) >= self.min_visibility
+        right_side_ok = min(
+            tracked["right_ear"][2], tracked["right_shoulder"][2], tracked["right_hip"][2]
+        ) >= self.min_visibility
+
+        if not left_side_ok and not right_side_ok:
             return DetectionResult(
                 detected=False,
                 posture_label="unknown",
                 confidence=0.0,
                 latency_ms=latency_ms,
                 metadata={
-                    "reason": "insufficient_face_landmarks",
+                    "reason": "insufficient_side_landmarks",
                     "backend": self.backend,
-                    "visible_face_points": len(visible_face),
                 },
             )
 
-        shoulder_y = (tracked["left_shoulder"][1] + tracked["right_shoulder"][1]) / 2.0
-        face_anchor_y = float(np.median([p[1] for p in visible_face]))
-        hip_y = (tracked["left_hip"][1] + tracked["right_hip"][1]) / 2.0
+        if left_side_ok and right_side_ok:
+            left_vis = tracked["left_ear"][2] + tracked["left_shoulder"][2] + tracked["left_hip"][2]
+            right_vis = tracked["right_ear"][2] + tracked["right_shoulder"][2] + tracked["right_hip"][2]
+            side = "left" if left_vis >= right_vis else "right"
+        else:
+            side = "left" if left_side_ok else "right"
+
+        ear = tracked[f"{side}_ear"]
+        shoulder = tracked[f"{side}_shoulder"]
+        hip = tracked[f"{side}_hip"]
+
+        shoulder_y = shoulder[1]
+        hip_y = hip[1]
 
         torso_len = max(hip_y - shoulder_y, 1e-4)
-        head_above_shoulder = (shoulder_y - face_anchor_y) / torso_len
-        slouch_score = self.slouch_threshold - head_above_shoulder
+        # Side-view slouch cues:
+        # 1) Neck drop: ear moving below shoulder.
+        # 2) Head-forward offset: ear horizontal offset from shoulder.
+        # 3) Torso lean angle: shoulder-hip line deviating from vertical.
+        neck_drop = max(0.0, (ear[1] - shoulder[1]) / torso_len)
+        head_forward_offset = abs(ear[0] - shoulder[0]) / torso_len
 
-        posture_label = "slouch" if slouch_score > 0 else "upright"
-        confidence = float(min(max(abs(slouch_score) / max(self.slouch_threshold, 1e-4), 0.0), 1.0))
+        dx = shoulder[0] - hip[0]
+        dy = hip[1] - shoulder[1]
+        torso_lean_angle_deg = float(np.degrees(np.arctan2(abs(dx), max(abs(dy), 1e-4))))
+        torso_lean_norm = min(torso_lean_angle_deg / 35.0, 1.0)
+
+        slouch_score = (
+            0.45 * head_forward_offset
+            + 0.30 * torso_lean_norm
+            + 0.25 * neck_drop
+        )
+
+        posture_label = "slouch" if slouch_score >= self.slouch_threshold else "upright"
+        confidence = float(
+            min(max(abs(slouch_score - self.slouch_threshold) / max(self.slouch_threshold, 1e-4), 0.0), 1.0)
+        )
 
         return DetectionResult(
             detected=True,
@@ -179,12 +200,14 @@ class MediaPipePostureDetector(BasePostureDetector):
             confidence=confidence,
             latency_ms=latency_ms,
             metadata={
-                "head_above_shoulder": float(head_above_shoulder),
-                "head_above_shoulder_threshold": float(self.slouch_threshold),
+                "slouch_score": float(slouch_score),
+                "slouch_score_threshold": float(self.slouch_threshold),
+                "head_forward_offset": float(head_forward_offset),
+                "torso_lean_angle_deg": float(torso_lean_angle_deg),
+                "neck_drop": float(neck_drop),
                 "torso_len": float(torso_len),
+                "selected_side": side,
                 "backend": self.backend,
-                "visible_face_points": len(visible_face),
-                "face_anchor": "median(nose,eyes,ears,mouth)",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
             },
         )
