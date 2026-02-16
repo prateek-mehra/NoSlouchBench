@@ -24,7 +24,7 @@ class YoloPosePostureDetector(BasePostureDetector):
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         keypoint_confidence_threshold: float = 0.25,
-        slouch_threshold: float = 0.38,
+        slouch_threshold: float = 0.30,
         imgsz: int = 640,
         device: str = "cpu",
     ) -> None:
@@ -103,40 +103,45 @@ class YoloPosePostureDetector(BasePostureDetector):
             "right_hip": point(self.KP_RIGHT_HIP),
         }
 
-        left_side_ok = min(
-            tracked["left_ear"][2], tracked["left_shoulder"][2], tracked["left_hip"][2]
+        left_upper_ok = min(
+            tracked["left_ear"][2], tracked["left_shoulder"][2]
         ) >= self.min_visibility
-        right_side_ok = min(
-            tracked["right_ear"][2], tracked["right_shoulder"][2], tracked["right_hip"][2]
+        right_upper_ok = min(
+            tracked["right_ear"][2], tracked["right_shoulder"][2]
         ) >= self.min_visibility
 
-        if not left_side_ok and not right_side_ok:
+        if not left_upper_ok and not right_upper_ok:
             return DetectionResult(
                 detected=False,
                 posture_label="unknown",
                 confidence=0.0,
                 latency_ms=latency_ms,
-                metadata={"reason": "insufficient_side_landmarks", "backend": "yolo-pose"},
+                metadata={"reason": "insufficient_upper_body_landmarks", "backend": "yolo-pose"},
             )
 
-        if left_side_ok and right_side_ok:
-            left_vis = tracked["left_ear"][2] + tracked["left_shoulder"][2] + tracked["left_hip"][2]
-            right_vis = tracked["right_ear"][2] + tracked["right_shoulder"][2] + tracked["right_hip"][2]
+        if left_upper_ok and right_upper_ok:
+            left_vis = tracked["left_ear"][2] + tracked["left_shoulder"][2] + 0.5 * tracked["left_hip"][2]
+            right_vis = tracked["right_ear"][2] + tracked["right_shoulder"][2] + 0.5 * tracked["right_hip"][2]
             side = "left" if left_vis >= right_vis else "right"
         else:
-            side = "left" if left_side_ok else "right"
+            side = "left" if left_upper_ok else "right"
 
         ear = tracked[f"{side}_ear"]
         shoulder = tracked[f"{side}_shoulder"]
         hip = tracked[f"{side}_hip"]
 
-        torso_len = max(hip[1] - shoulder[1], 1e-4)
+        torso_len, scale_source = self._compute_scale(tracked, side=side)
         neck_drop = max(0.0, (ear[1] - shoulder[1]) / torso_len)
         head_forward_offset = abs(ear[0] - shoulder[0]) / torso_len
 
-        dx = shoulder[0] - hip[0]
-        dy = hip[1] - shoulder[1]
-        torso_lean_angle_deg = float(np.degrees(np.arctan2(abs(dx), max(abs(dy), 1e-4))))
+        if hip[2] >= self.min_visibility:
+            dx = shoulder[0] - hip[0]
+            dy = hip[1] - shoulder[1]
+            torso_lean_angle_deg = float(np.degrees(np.arctan2(abs(dx), max(abs(dy), 1e-4))))
+            lean_source = f"{side}_shoulder_to_{side}_hip"
+        else:
+            torso_lean_angle_deg = 0.0
+            lean_source = "hip_missing"
         torso_lean_norm = min(torso_lean_angle_deg / 35.0, 1.0)
 
         slouch_score = 0.45 * head_forward_offset + 0.30 * torso_lean_norm + 0.25 * neck_drop
@@ -157,6 +162,8 @@ class YoloPosePostureDetector(BasePostureDetector):
                 "torso_lean_angle_deg": float(torso_lean_angle_deg),
                 "neck_drop": float(neck_drop),
                 "torso_len": float(torso_len),
+                "scale_source": scale_source,
+                "lean_source": lean_source,
                 "selected_side": side,
                 "backend": "yolo-pose",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
@@ -175,6 +182,20 @@ class YoloPosePostureDetector(BasePostureDetector):
             means.append(float(kcf_all[i].mean().item()))
         return int(np.argmax(np.array(means)))
 
+    def _compute_scale(self, tracked: dict[str, tuple[float, float, float]], side: str) -> tuple[float, str]:
+        shoulder = tracked[f"{side}_shoulder"]
+        hip = tracked[f"{side}_hip"]
+        if hip[2] >= self.min_visibility:
+            return max(hip[1] - shoulder[1], 1e-4), f"{side}_torso"
+
+        other_side = "right" if side == "left" else "left"
+        other_shoulder = tracked[f"{other_side}_shoulder"]
+        shoulder_span = abs(other_shoulder[0] - shoulder[0])
+        if other_shoulder[2] >= self.min_visibility and shoulder_span > 1e-4:
+            # Shoulder span fallback when hips are not confidently visible.
+            return max(shoulder_span, 1e-4), "shoulder_span"
+
+        return 0.15, "default_constant"
+
     def close(self) -> None:
         return None
-

@@ -9,7 +9,7 @@ models:
     conf_threshold: 0.25
     iou_threshold: 0.45
     keypoint_confidence_threshold: 0.25
-    slouch_threshold: 0.38
+    slouch_threshold: 0.30
     imgsz: 640
     device: cpu
   openpose:
