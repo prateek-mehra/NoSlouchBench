@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,7 +52,10 @@ class WebcamBenchmarkRunner:
         event_log_path = sessions_dir / f"{session_id}.jsonl"
         summary_path = summaries_dir / f"{session_id}.json"
 
-        cap = cv2.VideoCapture(self.camera_id)
+        if platform.system() == "Darwin":
+            cap = cv2.VideoCapture(self.camera_id, cv2.CAP_AVFOUNDATION)
+        else:
+            cap = cv2.VideoCapture(self.camera_id)
         if not cap.isOpened():
             raise RuntimeError(f"Could not open webcam camera_id={self.camera_id}")
 

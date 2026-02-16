@@ -53,6 +53,12 @@ For Logitech C270 specifically:
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display
 ```
 
+To confirm camera names/indices first:
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli list-cameras
+```
+
 4. For a long-run weekly session, you can keep it running with no duration cap:
 
 ```bash

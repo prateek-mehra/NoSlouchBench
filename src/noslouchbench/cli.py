@@ -29,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     summ.add_argument("--input-dir", default="outputs/summaries", help="Directory containing session summary JSON")
     summ.add_argument("--output-dir", default="outputs/reports", help="Output directory for comparison reports")
 
+    sub.add_parser("list-cameras", help="List available webcam devices")
+
     return parser.parse_args()
 
 
@@ -75,12 +77,28 @@ def summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def list_cameras() -> int:
+    from noslouchbench.camera import list_cameras_avfoundation
+
+    cameras = list_cameras_avfoundation()
+    if not cameras:
+        print("No cameras found via ffmpeg AVFoundation listing.")
+        return 1
+
+    print("Available cameras:")
+    for cam in cameras:
+        print(f"  [{cam.idx}] {cam.name}")
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     if args.command == "run-webcam":
         return run_webcam(args)
     if args.command == "summarize":
         return summarize(args)
+    if args.command == "list-cameras":
+        return list_cameras()
     raise ValueError(f"Unknown command: {args.command}")
 
 
