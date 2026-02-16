@@ -81,10 +81,12 @@ This produces:
 
 `mediapipe` currently classifies slouch by a normalized geometric rule:
 
-- Compute `head_above_shoulder = (shoulder_mid_y - nose_y) / torso_len`
+- Build a face anchor from multiple facial landmarks:
+  `median(nose, left_eye, right_eye, left_ear, right_ear, mouth_left, mouth_right)`
+- Compute `head_above_shoulder = (shoulder_mid_y - face_anchor_y) / torso_len`
 - Classify as `slouch` when `head_above_shoulder < head_above_shoulder_threshold`
 
-Default threshold is `0.42` (tighter than earlier baseline).  
+Default threshold is `0.50` (more sensitive to slouch).  
 Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.mediapipe.slouch_threshold`.
 
 ## Implementation Notes

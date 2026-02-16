@@ -218,6 +218,17 @@ class WebcamBenchmarkRunner:
                 (255, 200, 120),
                 2,
             )
+        visible_face = metadata.get("visible_face_points")
+        if visible_face is not None:
+            cv2.putText(
+                frame,
+                f"Visible face points: {visible_face}/7",
+                (16, 178),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (200, 255, 200),
+                2,
+            )
 
         # Draw and label the exact landmarks used by the posture logic.
         points = metadata.get("landmarks_norm", {})
