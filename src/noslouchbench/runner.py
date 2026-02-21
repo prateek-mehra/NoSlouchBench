@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from noslouchbench.audio import SlouchBeeper
 from noslouchbench.detectors.base import BasePostureDetector
 
 
@@ -29,6 +30,8 @@ class WebcamBenchmarkRunner:
         output_dir: Path,
         camera_id: int = 0,
         display: bool = True,
+        beep_on_slouch: bool = True,
+        record_path: Path | None = None,
         duration_minutes: float | None = None,
         frame_skip: int = 0,
         session_tag: str | None = None,
@@ -38,6 +41,8 @@ class WebcamBenchmarkRunner:
         self.output_dir = output_dir
         self.camera_id = camera_id
         self.display = display
+        self.beep_on_slouch = beep_on_slouch
+        self.record_path = record_path
         self.duration_minutes = duration_minutes
         self.frame_skip = max(frame_skip, 0)
         self.session_tag = session_tag
@@ -66,6 +71,8 @@ class WebcamBenchmarkRunner:
         slouch_frames = 0
         upright_frames = 0
         processed_frames = 0
+        beeper = SlouchBeeper() if self.beep_on_slouch else None
+        writer = None
 
         try:
             with event_log_path.open("w", encoding="utf-8") as logf:
@@ -90,6 +97,12 @@ class WebcamBenchmarkRunner:
                     elif result.posture_label == "upright":
                         upright_frames += 1
 
+                    if beeper is not None:
+                        if result.posture_label == "slouch":
+                            beeper.start()
+                        else:
+                            beeper.stop()
+
                     record = {
                         "timestamp_utc": ts,
                         "session_id": session_id,
@@ -103,9 +116,24 @@ class WebcamBenchmarkRunner:
                     }
                     logf.write(json.dumps(record) + "\n")
 
+                    frame_to_draw = frame.copy()
+                    self._draw_overlay(frame_to_draw, record)
+
+                    if writer is None and self.record_path is not None:
+                        self.record_path.parent.mkdir(parents=True, exist_ok=True)
+                        h, w, _ = frame_to_draw.shape
+                        fps = cap.get(cv2.CAP_PROP_FPS)
+                        if fps <= 0:
+                            fps = 20.0
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        writer = cv2.VideoWriter(str(self.record_path), fourcc, float(fps), (w, h))
+                        if not writer.isOpened():
+                            writer = None
+                    if writer is not None:
+                        writer.write(frame_to_draw)
+
                     if self.display:
-                        self._draw_overlay(frame, record)
-                        cv2.imshow("NoSlouchBench Webcam", frame)
+                        cv2.imshow("NoSlouchBench Webcam", frame_to_draw)
                         if cv2.waitKey(1) & 0xFF == ord("q"):
                             break
 
@@ -114,6 +142,10 @@ class WebcamBenchmarkRunner:
                         if elapsed_min >= self.duration_minutes:
                             break
         finally:
+            if beeper is not None:
+                beeper.close()
+            if writer is not None:
+                writer.release()
             cap.release()
             cv2.destroyAllWindows()
             self.detector.close()
@@ -245,6 +277,16 @@ class WebcamBenchmarkRunner:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 (120, 220, 255),
+                2,
+            )
+        if metadata.get("yaw_ambiguous"):
+            cv2.putText(
+                frame,
+                "Head turn detected (ear overlap) - reducing slouch sensitivity",
+                (16, 238),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (180, 180, 255),
                 2,
             )
 

@@ -27,6 +27,7 @@ class YoloPosePostureDetector(BasePostureDetector):
         slouch_threshold: float = 0.30,
         imgsz: int = 640,
         device: str = "cpu",
+        preferred_side: str = "auto",
     ) -> None:
         try:
             from ultralytics import YOLO
@@ -43,6 +44,10 @@ class YoloPosePostureDetector(BasePostureDetector):
         self.imgsz = imgsz
         self.device = device
         self.min_visibility = keypoint_confidence_threshold
+        side = (preferred_side or "auto").lower()
+        if side not in {"auto", "left", "right"}:
+            side = "auto"
+        self.preferred_side = side
 
     def infer(self, frame_bgr: np.ndarray) -> DetectionResult:
         t0 = time.perf_counter()
@@ -119,7 +124,11 @@ class YoloPosePostureDetector(BasePostureDetector):
                 metadata={"reason": "insufficient_upper_body_landmarks", "backend": "yolo-pose"},
             )
 
-        if left_upper_ok and right_upper_ok:
+        if self.preferred_side == "left" and left_upper_ok:
+            side = "left"
+        elif self.preferred_side == "right" and right_upper_ok:
+            side = "right"
+        elif left_upper_ok and right_upper_ok:
             left_vis = tracked["left_ear"][2] + tracked["left_shoulder"][2] + 0.5 * tracked["left_hip"][2]
             right_vis = tracked["right_ear"][2] + tracked["right_shoulder"][2] + 0.5 * tracked["right_hip"][2]
             side = "left" if left_vis >= right_vis else "right"
@@ -134,6 +143,26 @@ class YoloPosePostureDetector(BasePostureDetector):
         neck_drop = max(0.0, (ear[1] - shoulder[1]) / torso_len)
         head_forward_offset = abs(ear[0] - shoulder[0]) / torso_len
 
+        # Head turn can make both ear keypoints collapse to nearly the same x-position
+        # (especially with side cameras), which creates false slouch alerts.
+        # In that ambiguous case, damp the head-forward term instead of triggering beep.
+        left_ear = tracked["left_ear"]
+        right_ear = tracked["right_ear"]
+        left_shoulder = tracked["left_shoulder"]
+        right_shoulder = tracked["right_shoulder"]
+        shoulder_span = abs(right_shoulder[0] - left_shoulder[0])
+        ear_sep = abs(right_ear[0] - left_ear[0])
+        ear_sep_ratio = ear_sep / max(shoulder_span, 1e-4)
+        yaw_ambiguous = (
+            left_ear[2] >= self.min_visibility
+            and right_ear[2] >= self.min_visibility
+            and left_shoulder[2] >= self.min_visibility
+            and right_shoulder[2] >= self.min_visibility
+            and ear_sep_ratio < 0.45
+        )
+        if yaw_ambiguous:
+            head_forward_offset *= 0.05
+
         if hip[2] >= self.min_visibility:
             dx = shoulder[0] - hip[0]
             dy = hip[1] - shoulder[1]
@@ -144,7 +173,38 @@ class YoloPosePostureDetector(BasePostureDetector):
             lean_source = "hip_missing"
         torso_lean_norm = min(torso_lean_angle_deg / 35.0, 1.0)
 
+        # When hips are missing and shoulders are nearly overlapping in side-view,
+        # scale becomes unreliable and head-forward can spike during head turns.
+        unreliable_scale = scale_source != f"{side}_torso"
+        if unreliable_scale:
+            if ear_sep_ratio < 0.30:
+                # Ears collapsing usually indicates yaw/head-turn ambiguity with side camera.
+                head_forward_offset *= 0.12
+            else:
+                # Keep a safety cap but allow enough range for true slouch detection.
+                head_forward_offset = min(head_forward_offset, 1.6)
+            if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
+                return DetectionResult(
+                    detected=True,
+                    posture_label="unknown",
+                    confidence=0.0,
+                    latency_ms=latency_ms,
+                    metadata={
+                        "reason": "yaw_with_unreliable_scale",
+                        "yaw_ambiguous": True,
+                        "ear_sep_ratio": float(ear_sep_ratio),
+                        "selected_side": side,
+                        "preferred_side": self.preferred_side,
+                        "scale_source": scale_source,
+                        "lean_source": lean_source,
+                        "backend": "yolo-pose",
+                        "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
+                    },
+                )
+
         slouch_score = 0.45 * head_forward_offset + 0.30 * torso_lean_norm + 0.25 * neck_drop
+        if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
+            slouch_score *= 0.55
         posture_label = "slouch" if slouch_score >= self.slouch_threshold else "upright"
         confidence = float(
             min(max(abs(slouch_score - self.slouch_threshold) / max(self.slouch_threshold, 1e-4), 0.0), 1.0)
@@ -164,7 +224,10 @@ class YoloPosePostureDetector(BasePostureDetector):
                 "torso_len": float(torso_len),
                 "scale_source": scale_source,
                 "lean_source": lean_source,
+                "yaw_ambiguous": yaw_ambiguous,
+                "ear_sep_ratio": float(ear_sep_ratio),
                 "selected_side": side,
+                "preferred_side": self.preferred_side,
                 "backend": "yolo-pose",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
             },
