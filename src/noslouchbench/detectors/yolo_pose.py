@@ -177,7 +177,12 @@ class YoloPosePostureDetector(BasePostureDetector):
         # scale becomes unreliable and head-forward can spike during head turns.
         unreliable_scale = scale_source != f"{side}_torso"
         if unreliable_scale:
-            head_forward_offset = min(head_forward_offset, 0.65)
+            if ear_sep_ratio < 0.30:
+                # Ears collapsing usually indicates yaw/head-turn ambiguity with side camera.
+                head_forward_offset *= 0.12
+            else:
+                # Keep a safety cap but allow enough range for true slouch detection.
+                head_forward_offset = min(head_forward_offset, 1.6)
             if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
                 return DetectionResult(
                     detected=True,
