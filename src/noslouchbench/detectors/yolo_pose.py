@@ -158,7 +158,7 @@ class YoloPosePostureDetector(BasePostureDetector):
             and right_ear[2] >= self.min_visibility
             and left_shoulder[2] >= self.min_visibility
             and right_shoulder[2] >= self.min_visibility
-            and ear_sep_ratio < 0.22
+            and ear_sep_ratio < 0.45
         )
         if yaw_ambiguous:
             head_forward_offset *= 0.05
@@ -172,6 +172,30 @@ class YoloPosePostureDetector(BasePostureDetector):
             torso_lean_angle_deg = 0.0
             lean_source = "hip_missing"
         torso_lean_norm = min(torso_lean_angle_deg / 35.0, 1.0)
+
+        # When hips are missing and shoulders are nearly overlapping in side-view,
+        # scale becomes unreliable and head-forward can spike during head turns.
+        unreliable_scale = scale_source != f"{side}_torso"
+        if unreliable_scale:
+            head_forward_offset = min(head_forward_offset, 0.65)
+            if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
+                return DetectionResult(
+                    detected=True,
+                    posture_label="unknown",
+                    confidence=0.0,
+                    latency_ms=latency_ms,
+                    metadata={
+                        "reason": "yaw_with_unreliable_scale",
+                        "yaw_ambiguous": True,
+                        "ear_sep_ratio": float(ear_sep_ratio),
+                        "selected_side": side,
+                        "preferred_side": self.preferred_side,
+                        "scale_source": scale_source,
+                        "lean_source": lean_source,
+                        "backend": "yolo-pose",
+                        "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
+                    },
+                )
 
         slouch_score = 0.45 * head_forward_offset + 0.30 * torso_lean_norm + 0.25 * neck_drop
         if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
