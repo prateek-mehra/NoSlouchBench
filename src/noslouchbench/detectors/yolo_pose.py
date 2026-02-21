@@ -27,6 +27,7 @@ class YoloPosePostureDetector(BasePostureDetector):
         slouch_threshold: float = 0.30,
         imgsz: int = 640,
         device: str = "cpu",
+        preferred_side: str = "auto",
     ) -> None:
         try:
             from ultralytics import YOLO
@@ -43,6 +44,10 @@ class YoloPosePostureDetector(BasePostureDetector):
         self.imgsz = imgsz
         self.device = device
         self.min_visibility = keypoint_confidence_threshold
+        side = (preferred_side or "auto").lower()
+        if side not in {"auto", "left", "right"}:
+            side = "auto"
+        self.preferred_side = side
 
     def infer(self, frame_bgr: np.ndarray) -> DetectionResult:
         t0 = time.perf_counter()
@@ -119,7 +124,11 @@ class YoloPosePostureDetector(BasePostureDetector):
                 metadata={"reason": "insufficient_upper_body_landmarks", "backend": "yolo-pose"},
             )
 
-        if left_upper_ok and right_upper_ok:
+        if self.preferred_side == "left" and left_upper_ok:
+            side = "left"
+        elif self.preferred_side == "right" and right_upper_ok:
+            side = "right"
+        elif left_upper_ok and right_upper_ok:
             left_vis = tracked["left_ear"][2] + tracked["left_shoulder"][2] + 0.5 * tracked["left_hip"][2]
             right_vis = tracked["right_ear"][2] + tracked["right_shoulder"][2] + 0.5 * tracked["right_hip"][2]
             side = "left" if left_vis >= right_vis else "right"
@@ -149,10 +158,10 @@ class YoloPosePostureDetector(BasePostureDetector):
             and right_ear[2] >= self.min_visibility
             and left_shoulder[2] >= self.min_visibility
             and right_shoulder[2] >= self.min_visibility
-            and ear_sep_ratio < 0.12
+            and ear_sep_ratio < 0.22
         )
         if yaw_ambiguous:
-            head_forward_offset *= 0.25
+            head_forward_offset *= 0.05
 
         if hip[2] >= self.min_visibility:
             dx = shoulder[0] - hip[0]
@@ -165,6 +174,8 @@ class YoloPosePostureDetector(BasePostureDetector):
         torso_lean_norm = min(torso_lean_angle_deg / 35.0, 1.0)
 
         slouch_score = 0.45 * head_forward_offset + 0.30 * torso_lean_norm + 0.25 * neck_drop
+        if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
+            slouch_score *= 0.55
         posture_label = "slouch" if slouch_score >= self.slouch_threshold else "upright"
         confidence = float(
             min(max(abs(slouch_score - self.slouch_threshold) / max(self.slouch_threshold, 1e-4), 0.0), 1.0)
@@ -187,6 +198,7 @@ class YoloPosePostureDetector(BasePostureDetector):
                 "yaw_ambiguous": yaw_ambiguous,
                 "ear_sep_ratio": float(ear_sep_ratio),
                 "selected_side": side,
+                "preferred_side": self.preferred_side,
                 "backend": "yolo-pose",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
             },

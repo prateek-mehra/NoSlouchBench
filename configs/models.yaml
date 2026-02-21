@@ -12,5 +12,6 @@ models:
     slouch_threshold: 0.30
     imgsz: 640
     device: cpu
+    preferred_side: left
   openpose:
     enabled: false

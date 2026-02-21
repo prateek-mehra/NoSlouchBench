@@ -26,6 +26,7 @@ def build_detector(model_name: str, model_cfg: dict | None = None) -> BasePostur
             slouch_threshold=float(cfg.get("slouch_threshold", 0.38)),
             imgsz=int(cfg.get("imgsz", 640)),
             device=str(cfg.get("device", "cpu")),
+            preferred_side=str(cfg.get("preferred_side", "auto")),
         )
 
     if key == "openpose":
