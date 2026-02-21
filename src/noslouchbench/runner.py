@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from noslouchbench.audio import SlouchBeeper
 from noslouchbench.detectors.base import BasePostureDetector
 
 
@@ -29,6 +30,7 @@ class WebcamBenchmarkRunner:
         output_dir: Path,
         camera_id: int = 0,
         display: bool = True,
+        beep_on_slouch: bool = True,
         duration_minutes: float | None = None,
         frame_skip: int = 0,
         session_tag: str | None = None,
@@ -38,6 +40,7 @@ class WebcamBenchmarkRunner:
         self.output_dir = output_dir
         self.camera_id = camera_id
         self.display = display
+        self.beep_on_slouch = beep_on_slouch
         self.duration_minutes = duration_minutes
         self.frame_skip = max(frame_skip, 0)
         self.session_tag = session_tag
@@ -66,6 +69,7 @@ class WebcamBenchmarkRunner:
         slouch_frames = 0
         upright_frames = 0
         processed_frames = 0
+        beeper = SlouchBeeper() if self.beep_on_slouch else None
 
         try:
             with event_log_path.open("w", encoding="utf-8") as logf:
@@ -89,6 +93,12 @@ class WebcamBenchmarkRunner:
                         slouch_frames += 1
                     elif result.posture_label == "upright":
                         upright_frames += 1
+
+                    if beeper is not None:
+                        if result.posture_label == "slouch":
+                            beeper.start()
+                        else:
+                            beeper.stop()
 
                     record = {
                         "timestamp_utc": ts,
@@ -114,6 +124,8 @@ class WebcamBenchmarkRunner:
                         if elapsed_min >= self.duration_minutes:
                             break
         finally:
+            if beeper is not None:
+                beeper.close()
             cap.release()
             cv2.destroyAllWindows()
             self.detector.close()

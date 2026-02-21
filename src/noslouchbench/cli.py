@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     run.add_argument("--frame-skip", type=int, default=0, help="Process every N+1 frame")
     run.add_argument("--session-tag", default=None, help="Optional run tag appended to session id")
     run.add_argument("--display", action="store_true", help="Show annotated webcam window")
+    run.add_argument("--no-beep", action="store_true", help="Disable continuous beep while slouching")
     run.add_argument("--output-dir", default="outputs", help="Directory for logs and summaries")
     run.add_argument("--config", default="configs/models.yaml", help="Model config YAML")
 
@@ -52,6 +53,7 @@ def run_webcam(args: argparse.Namespace) -> int:
         output_dir=Path(args.output_dir),
         camera_id=camera_id,
         display=args.display,
+        beep_on_slouch=not args.no_beep,
         duration_minutes=args.duration_minutes,
         frame_skip=args.frame_skip,
         session_tag=args.session_tag,

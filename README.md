@@ -53,6 +53,13 @@ For Logitech C270 specifically:
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display
 ```
 
+By default, a continuous beep is played while posture is classified as `slouch`, and it stops when posture becomes `upright`.
+To disable audio alerts:
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display --no-beep
+```
+
 To confirm camera names/indices first:
 
 ```bash
