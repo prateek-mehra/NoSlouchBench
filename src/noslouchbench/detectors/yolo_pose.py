@@ -134,6 +134,26 @@ class YoloPosePostureDetector(BasePostureDetector):
         neck_drop = max(0.0, (ear[1] - shoulder[1]) / torso_len)
         head_forward_offset = abs(ear[0] - shoulder[0]) / torso_len
 
+        # Head turn can make both ear keypoints collapse to nearly the same x-position
+        # (especially with side cameras), which creates false slouch alerts.
+        # In that ambiguous case, damp the head-forward term instead of triggering beep.
+        left_ear = tracked["left_ear"]
+        right_ear = tracked["right_ear"]
+        left_shoulder = tracked["left_shoulder"]
+        right_shoulder = tracked["right_shoulder"]
+        shoulder_span = abs(right_shoulder[0] - left_shoulder[0])
+        ear_sep = abs(right_ear[0] - left_ear[0])
+        ear_sep_ratio = ear_sep / max(shoulder_span, 1e-4)
+        yaw_ambiguous = (
+            left_ear[2] >= self.min_visibility
+            and right_ear[2] >= self.min_visibility
+            and left_shoulder[2] >= self.min_visibility
+            and right_shoulder[2] >= self.min_visibility
+            and ear_sep_ratio < 0.12
+        )
+        if yaw_ambiguous:
+            head_forward_offset *= 0.25
+
         if hip[2] >= self.min_visibility:
             dx = shoulder[0] - hip[0]
             dy = hip[1] - shoulder[1]
@@ -164,6 +184,8 @@ class YoloPosePostureDetector(BasePostureDetector):
                 "torso_len": float(torso_len),
                 "scale_source": scale_source,
                 "lean_source": lean_source,
+                "yaw_ambiguous": yaw_ambiguous,
+                "ear_sep_ratio": float(ear_sep_ratio),
                 "selected_side": side,
                 "backend": "yolo-pose",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},

@@ -259,6 +259,16 @@ class WebcamBenchmarkRunner:
                 (120, 220, 255),
                 2,
             )
+        if metadata.get("yaw_ambiguous"):
+            cv2.putText(
+                frame,
+                "Head turn detected (ear overlap) - reducing slouch sensitivity",
+                (16, 238),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (180, 180, 255),
+                2,
+            )
 
         # Draw and label the exact landmarks used by the posture logic.
         points = metadata.get("landmarks_norm", {})
