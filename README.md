@@ -11,9 +11,9 @@ The goal is fair, deployment-aware comparison of real-time posture detection sys
 
 ## Demo Video
 
-<video src="https://github.com/prateek-mehra/NoSlouchBench/raw/codex/readme-demo-video/outputs/demo/final_demo.mp4" controls muted playsinline width="900"></video>
+<video src="https://github.com/prateek-mehra/NoSlouchBench/raw/main/outputs/demo/final_demo.mp4" controls muted playsinline width="900"></video>
 
-![Demo GIF](https://github.com/prateek-mehra/NoSlouchBench/raw/codex/readme-demo-video/outputs/demo/final_demo.gif)
+![Demo GIF](https://github.com/prateek-mehra/NoSlouchBench/raw/main/outputs/demo/final_demo.gif)
 
 ## Current Status
 
