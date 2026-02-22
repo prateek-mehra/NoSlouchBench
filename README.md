@@ -13,6 +13,8 @@ The goal is fair, deployment-aware comparison of real-time posture detection sys
 
 <video src="https://github.com/prateek-mehra/NoSlouchBench/raw/codex/readme-demo-video/outputs/demo/final_demo.mp4" controls muted playsinline width="900"></video>
 
+![Demo GIF](https://github.com/prateek-mehra/NoSlouchBench/raw/codex/readme-demo-video/outputs/demo/final_demo.gif)
+
 ## Current Status
 
 This repository is now set up for live webcam benchmarking with:
