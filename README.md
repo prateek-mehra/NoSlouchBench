@@ -56,7 +56,7 @@ PYTHONPATH=src python -m noslouchbench.cli list-cameras
 Then run YOLO-Pose benchmark on webcam (default model):
 
 ```bash
-PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --duration-minutes 60 --display
+PYTHONPATH=src python3 -m noslouchbench.cli run-webcam --model yolo-pose --camera-id 0  --display --screen-blocker
 ```
 
 For Logitech C270 specifically (or any camera name shown above):
@@ -72,14 +72,16 @@ To disable audio alerts:
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display --no-beep
 ```
 
-To test screen-blocking alerts (keeps audio unless `--no-beep` is also passed):
+Final run command:
 
 ```bash
-PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display --screen-blocker
+PYTHONPATH=src python3 -m noslouchbench.cli run-webcam --model yolo-pose --camera-id 0  --display --screen-blocker
 ```
 
 When slouch is detected, a semi-transparent full-screen layer appears and is removed once posture returns to `upright`.
 Kill switch (for safety): `Ctrl+Shift+K` (can be changed with `--screen-blocker-kill-switch`).
+While screen-blocker mode is enabled, 3-finger horizontal swipe gesture is temporarily disabled for the session and restored on exit.  
+To skip this behavior, pass `--no-lock-swipe-gesture`.
 
 To record a debug session (with overlays) for later analysis:
 
@@ -96,7 +98,7 @@ PYTHONPATH=src python -m noslouchbench.cli analyze-video --model yolo-pose --inp
 4. For a long-run weekly session, you can keep it running with no duration cap:
 
 ```bash
-PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --display
+PYTHONPATH=src python3 -m noslouchbench.cli run-webcam --model yolo-pose --camera-id 0  --display --screen-blocker
 ```
 
 Press `q` in the display window to stop.

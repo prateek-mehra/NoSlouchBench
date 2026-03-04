@@ -13,6 +13,7 @@ import numpy as np
 from noslouchbench.audio import SlouchBeeper
 from noslouchbench.detectors.base import BasePostureDetector
 from noslouchbench.screen_blocker import ScreenBlocker
+from noslouchbench.system_lock import TrackpadSwipeGuard
 
 
 @dataclass
@@ -36,6 +37,7 @@ class WebcamBenchmarkRunner:
         display: bool = True,
         beep_on_slouch: bool = True,
         block_screen_on_slouch: bool = False,
+        lock_swipe_gesture: bool = False,
         blocker_opacity: float = 0.78,
         blocker_kill_switch: str = "Ctrl+Shift+K",
         record_path: Path | None = None,
@@ -50,6 +52,7 @@ class WebcamBenchmarkRunner:
         self.display = display
         self.beep_on_slouch = beep_on_slouch
         self.block_screen_on_slouch = block_screen_on_slouch
+        self.lock_swipe_gesture = lock_swipe_gesture
         self.blocker_opacity = blocker_opacity
         self.blocker_kill_switch = blocker_kill_switch
         self.record_path = record_path
@@ -78,6 +81,7 @@ class WebcamBenchmarkRunner:
         processed_frames = 0
         beeper = SlouchBeeper() if self.beep_on_slouch else None
         blocker = None
+        swipe_guard = None
         blocker_condition_since: float | None = None
         blocker_active = False
         if self.block_screen_on_slouch:
@@ -85,6 +89,13 @@ class WebcamBenchmarkRunner:
             if not blocker.available:
                 print("Screen blocker unavailable in this environment. Continuing without screen blocking.")
                 blocker = None
+        if self.lock_swipe_gesture:
+            swipe_guard = TrackpadSwipeGuard()
+            if swipe_guard.supported:
+                swipe_guard.activate()
+                print("Trackpad swipe lock enabled for this session.")
+            else:
+                swipe_guard = None
         writer = None
 
         try:
@@ -188,6 +199,8 @@ class WebcamBenchmarkRunner:
                 beeper.close()
             if blocker is not None:
                 blocker.close()
+            if swipe_guard is not None:
+                swipe_guard.restore()
             if writer is not None:
                 writer.release()
             cap.release()

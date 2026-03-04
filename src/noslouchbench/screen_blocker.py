@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 
@@ -69,25 +72,23 @@ class ScreenBlocker:
         if self._proc is not None and self._proc.poll() is None:
             return True
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "noslouchbench.screen_blocker",
-            "--opacity",
-            str(self.opacity),
-            "--kill-switch",
-            self.kill_switch,
-            "--kill-marker",
-            str(self._kill_marker),
-        ]
+        for cmd in self._build_blocker_commands():
+            try:
+                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+            except Exception:
+                continue
 
-        try:
-            self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+            # If child exits immediately (e.g., swift toolchain/env issue), fallback.
+            time.sleep(0.12)
+            if proc.poll() is not None:
+                continue
+
+            self._proc = proc
             return True
-        except Exception:
-            self._available = False
-            self._proc = None
-            return False
+
+        self._available = False
+        self._proc = None
+        return False
 
     def _send_cmd(self, cmd: str) -> None:
         if self._proc is None or self._proc.poll() is not None:
@@ -100,6 +101,40 @@ class ScreenBlocker:
             self._proc.stdin.flush()
         except Exception:
             self._available = False
+
+    def _build_blocker_commands(self) -> list[list[str]]:
+        commands: list[list[str]] = []
+
+        # On macOS, prefer a native AppKit overlay across all Spaces so swipe
+        # gestures cannot escape to another desktop while blocker is active.
+        if platform.system() == "Darwin":
+            swift = shutil.which("swift")
+            script = Path(__file__).resolve().parents[2] / "scripts" / "screen_blocker.swift"
+            if swift and script.exists():
+                commands.append([
+                    swift,
+                    str(script),
+                    "--opacity",
+                    str(self.opacity),
+                    "--kill-switch",
+                    self.kill_switch,
+                    "--kill-marker",
+                    str(self._kill_marker),
+                ])
+
+        # Fallback to python/tk implementation.
+        commands.append([
+            sys.executable,
+            "-m",
+            "noslouchbench.screen_blocker",
+            "--opacity",
+            str(self.opacity),
+            "--kill-switch",
+            self.kill_switch,
+            "--kill-marker",
+            str(self._kill_marker),
+        ])
+        return commands
 
 
 def _to_tk_binding(kill_switch: str) -> str:
