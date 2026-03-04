@@ -3,6 +3,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from noslouchbench.habits_report import (
+    aggregate_daily,
+    aggregate_weekly,
+    load_session_habit_records,
+    render_terminal_summary,
+    resolve_timezone,
+    write_habits_reports,
+)
 from noslouchbench.report import aggregate_summaries, write_reports
 
 
@@ -30,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     summ = sub.add_parser("summarize", help="Aggregate session summaries by model")
     summ.add_argument("--input-dir", default="outputs/summaries", help="Directory containing session summary JSON")
     summ.add_argument("--output-dir", default="outputs/reports", help="Output directory for comparison reports")
+
+    habits = sub.add_parser("summarize-habits", help="Generate daily/weekly human-readable habit reports")
+    habits.add_argument("--summaries-dir", default="outputs/summaries", help="Directory containing session summaries")
+    habits.add_argument("--sessions-dir", default="outputs/sessions", help="Directory containing frame-level JSONL logs")
+    habits.add_argument("--output-dir", default="outputs/reports", help="Directory for habit reports")
+    habits.add_argument("--timezone", default="local", help='Timezone for bucketing (e.g., "local", "UTC", "Asia/Kolkata")')
+    habits.add_argument("--show", action="store_true", help="Print terminal summary for daily/weekly stats")
 
     sub.add_parser("list-cameras", help="List available webcam devices")
 
@@ -87,6 +102,33 @@ def summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def summarize_habits_cmd(args: argparse.Namespace) -> int:
+    summaries_dir = Path(args.summaries_dir)
+    sessions_dir = Path(args.sessions_dir)
+    output_dir = Path(args.output_dir)
+
+    artifacts = write_habits_reports(
+        summaries_dir=summaries_dir,
+        sessions_dir=sessions_dir,
+        output_dir=output_dir,
+        timezone_name=args.timezone,
+    )
+    print(f"Wrote daily CSV: {artifacts['daily_csv']}")
+    print(f"Wrote weekly CSV: {artifacts['weekly_csv']}")
+    print(f"Wrote daily Markdown: {artifacts['daily_md']}")
+    print(f"Wrote weekly Markdown: {artifacts['weekly_md']}")
+
+    if args.show:
+        tzinfo = resolve_timezone(args.timezone)
+        records = load_session_habit_records(summaries_dir=summaries_dir, sessions_dir=sessions_dir, tzinfo=tzinfo)
+        daily_rows = aggregate_daily(records)
+        weekly_rows = aggregate_weekly(records)
+        print("")
+        print(render_terminal_summary(daily_rows, weekly_rows))
+
+    return 0
+
+
 def list_cameras() -> int:
     from noslouchbench.camera import list_cameras_avfoundation
 
@@ -130,6 +172,8 @@ def main() -> int:
         return run_webcam(args)
     if args.command == "summarize":
         return summarize(args)
+    if args.command == "summarize-habits":
+        return summarize_habits_cmd(args)
     if args.command == "list-cameras":
         return list_cameras()
     if args.command == "analyze-video":

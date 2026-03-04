@@ -108,6 +108,56 @@ This produces:
 - `outputs/reports/model_comparison.csv`
 - `outputs/reports/model_comparison.md`
 
+## Habit Reports (Daily/Weekly)
+
+Generate human-readable daily and weekly posture stats:
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli summarize-habits --show
+```
+
+This produces:
+- `outputs/reports/habits_daily.csv`
+- `outputs/reports/habits_weekly.csv`
+- `outputs/reports/habits_daily.md`
+- `outputs/reports/habits_weekly.md`
+
+Reported metrics:
+- `Hours Sitting`: total webcam runtime
+- `Slouch Minutes`: `duration_seconds * slouch_ratio`
+- `Beep Events`: number of transitions into `slouch` (slouch episodes)
+- `Sessions`: number of runs in that day/week bucket
+
+If a session log is missing, beep count falls back to `0` and CSV marks `beep_source=missing_log`.
+
+## Streamlit Dashboard
+
+View habit reports locally in a basic UI:
+
+```bash
+PYTHONPATH=src streamlit run streamlit_app.py
+```
+
+In the UI:
+- Set summaries/sessions/reports directories in the sidebar.
+- Click `Refresh Reports` to regenerate daily/weekly files.
+- View latest daily/weekly headline metrics and full tables.
+
+## Automation (cron)
+
+Helper script:
+
+```bash
+scripts/schedule_reports.sh
+```
+
+Example crontab (local timezone):
+
+```cron
+# Refresh local report artifacts daily at 9:00 PM
+0 21 * * * cd /Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench && /usr/bin/env bash scripts/schedule_reports.sh >> outputs/reports/cron_reports.log 2>&1
+```
+
 ## Benchmark Metrics Tracked
 
 - Average inference latency (ms)
