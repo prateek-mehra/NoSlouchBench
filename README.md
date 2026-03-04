@@ -47,13 +47,19 @@ Download the MediaPipe Tasks pose model only if using `--model mediapipe` with t
 python scripts/download_pose_landmarker.py
 ```
 
-3. Run YOLO-Pose benchmark on webcam (default model):
+3. List cameras first, then pick the appropriate one:
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli list-cameras
+```
+
+Then run YOLO-Pose benchmark on webcam (default model):
 
 ```bash
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --duration-minutes 60 --display
 ```
 
-For Logitech C270 specifically:
+For Logitech C270 specifically (or any camera name shown above):
 
 ```bash
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display
@@ -76,12 +82,6 @@ Then analyze that saved video:
 
 ```bash
 PYTHONPATH=src python -m noslouchbench.cli analyze-video --model yolo-pose --input-video outputs/debug/repro.mp4
-```
-
-To confirm camera names/indices first:
-
-```bash
-PYTHONPATH=src python -m noslouchbench.cli list-cameras
 ```
 
 4. For a long-run weekly session, you can keep it running with no duration cap:
