@@ -161,7 +161,8 @@ class YoloPosePostureDetector(BasePostureDetector):
             and ear_sep_ratio < 0.45
         )
         if yaw_ambiguous:
-            head_forward_offset *= 0.05
+            # Keep head-forward informative even during mild yaw ambiguity.
+            head_forward_offset *= 0.35
 
         if hip[2] >= self.min_visibility:
             dx = shoulder[0] - hip[0]
@@ -179,7 +180,7 @@ class YoloPosePostureDetector(BasePostureDetector):
         if unreliable_scale:
             if ear_sep_ratio < 0.30:
                 # Ears collapsing usually indicates yaw/head-turn ambiguity with side camera.
-                head_forward_offset *= 0.12
+                head_forward_offset *= 0.65
             else:
                 # Keep a safety cap but allow enough range for true slouch detection.
                 head_forward_offset = min(head_forward_offset, 1.6)
@@ -202,12 +203,25 @@ class YoloPosePostureDetector(BasePostureDetector):
                     },
                 )
 
-        slouch_score = 0.45 * head_forward_offset + 0.30 * torso_lean_norm + 0.25 * neck_drop
+        # Shoulder/face-focused scoring:
+        # prioritize ear-to-shoulder forward displacement and neck drop,
+        # while keeping torso-lean as a weaker supplemental cue.
+        slouch_score = 0.62 * head_forward_offset + 0.10 * torso_lean_norm + 0.28 * neck_drop
         if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
             slouch_score *= 0.55
-        posture_label = "slouch" if slouch_score >= self.slouch_threshold else "upright"
+
+        # Make detection stricter (more sensitive) when hips are not visible,
+        # since webcam framing is often upper-body only.
+        effective_threshold = float(self.slouch_threshold)
+        if lean_source == "hip_missing":
+            effective_threshold *= 0.84
+        if scale_source != f"{side}_torso":
+            effective_threshold *= 0.92
+        effective_threshold = max(effective_threshold, 0.12)
+
+        posture_label = "slouch" if slouch_score >= effective_threshold else "upright"
         confidence = float(
-            min(max(abs(slouch_score - self.slouch_threshold) / max(self.slouch_threshold, 1e-4), 0.0), 1.0)
+            min(max(abs(slouch_score - effective_threshold) / max(effective_threshold, 1e-4), 0.0), 1.0)
         )
 
         return DetectionResult(
@@ -218,6 +232,7 @@ class YoloPosePostureDetector(BasePostureDetector):
             metadata={
                 "slouch_score": float(slouch_score),
                 "slouch_score_threshold": float(self.slouch_threshold),
+                "effective_slouch_threshold": float(effective_threshold),
                 "head_forward_offset": float(head_forward_offset),
                 "torso_lean_angle_deg": float(torso_lean_angle_deg),
                 "neck_drop": float(neck_drop),

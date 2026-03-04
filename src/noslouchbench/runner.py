@@ -12,6 +12,7 @@ import numpy as np
 
 from noslouchbench.audio import SlouchBeeper
 from noslouchbench.detectors.base import BasePostureDetector
+from noslouchbench.screen_blocker import ScreenBlocker
 
 
 @dataclass
@@ -23,6 +24,9 @@ class RunArtifacts:
 
 
 class WebcamBenchmarkRunner:
+    BLOCKER_SLOUCH_SCORE_THRESHOLD = 0.12
+    BLOCKER_SUSTAIN_SECONDS = 2.0
+
     def __init__(
         self,
         detector: BasePostureDetector,
@@ -31,6 +35,9 @@ class WebcamBenchmarkRunner:
         camera_id: int = 0,
         display: bool = True,
         beep_on_slouch: bool = True,
+        block_screen_on_slouch: bool = False,
+        blocker_opacity: float = 0.78,
+        blocker_kill_switch: str = "Ctrl+Shift+K",
         record_path: Path | None = None,
         duration_minutes: float | None = None,
         frame_skip: int = 0,
@@ -42,6 +49,9 @@ class WebcamBenchmarkRunner:
         self.camera_id = camera_id
         self.display = display
         self.beep_on_slouch = beep_on_slouch
+        self.block_screen_on_slouch = block_screen_on_slouch
+        self.blocker_opacity = blocker_opacity
+        self.blocker_kill_switch = blocker_kill_switch
         self.record_path = record_path
         self.duration_minutes = duration_minutes
         self.frame_skip = max(frame_skip, 0)
@@ -57,12 +67,7 @@ class WebcamBenchmarkRunner:
         event_log_path = sessions_dir / f"{session_id}.jsonl"
         summary_path = summaries_dir / f"{session_id}.json"
 
-        if platform.system() == "Darwin":
-            cap = cv2.VideoCapture(self.camera_id, cv2.CAP_AVFOUNDATION)
-        else:
-            cap = cv2.VideoCapture(self.camera_id)
-        if not cap.isOpened():
-            raise RuntimeError(f"Could not open webcam camera_id={self.camera_id}")
+        cap, first_frame = self._open_camera_capture()
 
         start = time.time()
         frame_idx = 0
@@ -72,12 +77,25 @@ class WebcamBenchmarkRunner:
         upright_frames = 0
         processed_frames = 0
         beeper = SlouchBeeper() if self.beep_on_slouch else None
+        blocker = None
+        blocker_condition_since: float | None = None
+        blocker_active = False
+        if self.block_screen_on_slouch:
+            blocker = ScreenBlocker(opacity=self.blocker_opacity, kill_switch=self.blocker_kill_switch)
+            if not blocker.available:
+                print("Screen blocker unavailable in this environment. Continuing without screen blocking.")
+                blocker = None
         writer = None
 
         try:
             with event_log_path.open("w", encoding="utf-8") as logf:
                 while True:
-                    ok, frame = cap.read()
+                    if first_frame is not None:
+                        frame = first_frame
+                        first_frame = None
+                        ok = True
+                    else:
+                        ok, frame = cap.read()
                     if not ok:
                         break
 
@@ -102,6 +120,30 @@ class WebcamBenchmarkRunner:
                             beeper.start()
                         else:
                             beeper.stop()
+                    if blocker is not None:
+                        raw_score = result.metadata.get("slouch_score")
+                        try:
+                            should_block = float(raw_score) > self.BLOCKER_SLOUCH_SCORE_THRESHOLD
+                        except (TypeError, ValueError):
+                            should_block = False
+                        now_ts = time.time()
+
+                        if blocker.killed:
+                            blocker_condition_since = None
+                            blocker_active = False
+                            blocker.stop()
+                        elif should_block:
+                            if blocker_condition_since is None:
+                                blocker_condition_since = now_ts
+                            sustained = (now_ts - blocker_condition_since) >= self.BLOCKER_SUSTAIN_SECONDS
+                            if sustained and not blocker_active:
+                                blocker.start()
+                                blocker_active = True
+                        else:
+                            blocker_condition_since = None
+                            if blocker_active:
+                                blocker.stop()
+                                blocker_active = False
 
                     record = {
                         "timestamp_utc": ts,
@@ -144,6 +186,8 @@ class WebcamBenchmarkRunner:
         finally:
             if beeper is not None:
                 beeper.close()
+            if blocker is not None:
+                blocker.close()
             if writer is not None:
                 writer.release()
             cap.release()
@@ -169,6 +213,32 @@ class WebcamBenchmarkRunner:
             event_log_path=event_log_path,
             summary_path=summary_path,
             summary=summary,
+        )
+
+    def _open_camera_capture(self) -> tuple[cv2.VideoCapture, np.ndarray | None]:
+        attempts: list[tuple[str, cv2.VideoCapture]] = []
+        if platform.system() == "Darwin":
+            attempts = [
+                ("default", cv2.VideoCapture(self.camera_id)),
+                ("avfoundation", cv2.VideoCapture(self.camera_id, cv2.CAP_AVFOUNDATION)),
+            ]
+        else:
+            attempts = [("default", cv2.VideoCapture(self.camera_id))]
+
+        for _, cap in attempts:
+            if not cap.isOpened():
+                cap.release()
+                continue
+
+            ok, frame = cap.read()
+            if ok:
+                return cap, frame
+
+            cap.release()
+
+        attempted = ", ".join(name for name, _ in attempts)
+        raise RuntimeError(
+            f"Could not open webcam camera_id={self.camera_id} using backends: {attempted}"
         )
 
     def _build_summary(

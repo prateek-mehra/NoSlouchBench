@@ -31,6 +31,22 @@ def parse_args() -> argparse.Namespace:
     run.add_argument("--session-tag", default=None, help="Optional run tag appended to session id")
     run.add_argument("--display", action="store_true", help="Show annotated webcam window")
     run.add_argument("--no-beep", action="store_true", help="Disable continuous beep while slouching")
+    run.add_argument(
+        "--screen-blocker",
+        action="store_true",
+        help="Enable full-screen semi-transparent blocker while slouching (optional test flow).",
+    )
+    run.add_argument(
+        "--screen-blocker-opacity",
+        type=float,
+        default=0.78,
+        help="Opacity for blocker overlay (0.2-0.95). Higher means darker.",
+    )
+    run.add_argument(
+        "--screen-blocker-kill-switch",
+        default="Ctrl+Shift+K",
+        help="Kill-switch hint shown on blocker overlay (default Ctrl+Shift+K).",
+    )
     run.add_argument("--record-path", default=None, help="Optional output video path (e.g., outputs/debug/run.mp4)")
     run.add_argument("--output-dir", default="outputs", help="Directory for logs and summaries")
     run.add_argument("--config", default="configs/models.yaml", help="Model config YAML")
@@ -69,13 +85,20 @@ def run_webcam(args: argparse.Namespace) -> int:
     camera_id = resolve_camera_id(args.camera_id, args.camera_name)
     print(f"Using camera_id={camera_id}")
 
+    beep_on_slouch = (not args.no_beep) and (not args.screen_blocker)
+    if args.screen_blocker and not args.no_beep:
+        print("Screen-blocker mode enabled: muting beep for blocker-only testing.")
+
     runner = WebcamBenchmarkRunner(
         detector=detector,
         model_name=args.model,
         output_dir=Path(args.output_dir),
         camera_id=camera_id,
         display=args.display,
-        beep_on_slouch=not args.no_beep,
+        beep_on_slouch=beep_on_slouch,
+        block_screen_on_slouch=args.screen_blocker,
+        blocker_opacity=args.screen_blocker_opacity,
+        blocker_kill_switch=args.screen_blocker_kill_switch,
         record_path=Path(args.record_path) if args.record_path else None,
         duration_minutes=args.duration_minutes,
         frame_skip=args.frame_skip,

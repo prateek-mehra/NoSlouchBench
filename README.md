@@ -72,6 +72,15 @@ To disable audio alerts:
 PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display --no-beep
 ```
 
+To test screen-blocking alerts (keeps audio unless `--no-beep` is also passed):
+
+```bash
+PYTHONPATH=src python -m noslouchbench.cli run-webcam --model yolo-pose --camera-name "Logitech C270" --display --screen-blocker
+```
+
+When slouch is detected, a semi-transparent full-screen layer appears and is removed once posture returns to `upright`.
+Kill switch (for safety): `Ctrl+Shift+K` (can be changed with `--screen-blocker-kill-switch`).
+
 To record a debug session (with overlays) for later analysis:
 
 ```bash
@@ -180,7 +189,7 @@ Example crontab (local timezone):
   - neck drop (`max(0, ear_y - shoulder_y) / torso_len`)
 - Classifies as `slouch` when `slouch_score >= slouch_threshold`.
 
-Default threshold is `0.30` (tighter, more sensitive to slouch).  
+Default threshold is `0.12` (strict and highly sensitive to slouch).  
 Tune in `/Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench/configs/models.yaml` under `models.yolo-pose.slouch_threshold`.
 
 ## Implementation Notes
