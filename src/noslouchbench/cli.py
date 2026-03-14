@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 from pathlib import Path
 
 from noslouchbench.habits_report import (
@@ -86,9 +87,15 @@ def run_webcam(args: argparse.Namespace) -> int:
 
     config_path = Path(args.config)
     model_cfg = load_model_config(config_path, args.model)
-    detector = build_detector(args.model, model_cfg=model_cfg)
+    detector_decision_mode = None
+    if platform.system() == "Darwin" and args.screen_blocker and args.model.lower() == "yolo-pose":
+        detector_decision_mode = "frontal-neck-baseline"
+    detector = build_detector(args.model, model_cfg=model_cfg, decision_mode=detector_decision_mode)
     camera_id = resolve_camera_id(args.camera_id, args.camera_name)
     print(f"Using camera_id={camera_id}")
+    if detector_decision_mode is not None:
+        print("macOS screen-blocker flow: using frontal neck-baseline slouch detection.")
+        print("Hold an upright neutral posture for the first few seconds so baseline calibration can complete.")
 
     beep_on_slouch = (not args.no_beep) and (not args.screen_blocker)
     lock_swipe_gesture = args.screen_blocker and (not args.no_lock_swipe_gesture)

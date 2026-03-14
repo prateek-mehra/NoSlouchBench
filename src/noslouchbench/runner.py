@@ -143,12 +143,20 @@ class WebcamBenchmarkRunner:
                         else:
                             beeper.stop()
                     if blocker is not None:
-                        raw_score = result.metadata.get("slouch_score")
-                        try:
-                            should_block = float(raw_score) > self.BLOCKER_SLOUCH_SCORE_THRESHOLD
-                        except (TypeError, ValueError):
-                            should_block = False
                         now_ts = time.time()
+                        neck_len = result.metadata.get("neck_length_ratio")
+                        neck_len_threshold = result.metadata.get("neck_length_slouch_threshold")
+                        if neck_len is not None and neck_len_threshold is not None:
+                            try:
+                                should_block = float(neck_len) < float(neck_len_threshold)
+                            except (TypeError, ValueError):
+                                should_block = False
+                        else:
+                            raw_score = result.metadata.get("slouch_score")
+                            try:
+                                should_block = float(raw_score) > self.BLOCKER_SLOUCH_SCORE_THRESHOLD
+                            except (TypeError, ValueError):
+                                should_block = False
 
                         if blocker.killed:
                             blocker_condition_since = None
@@ -166,6 +174,12 @@ class WebcamBenchmarkRunner:
                             if blocker_active:
                                 blocker.stop()
                                 blocker_active = False
+
+                        blocker_elapsed = 0.0 if blocker_condition_since is None else max(now_ts - blocker_condition_since, 0.0)
+                        result.metadata["blocker_should_block"] = should_block
+                        result.metadata["blocker_condition_elapsed_seconds"] = float(blocker_elapsed)
+                        result.metadata["blocker_sustain_seconds"] = float(self.BLOCKER_SUSTAIN_SECONDS)
+                        result.metadata["blocker_active"] = blocker_active
 
                     record = {
                         "timestamp_utc": ts,
@@ -336,15 +350,15 @@ class WebcamBenchmarkRunner:
     @staticmethod
     def _draw_overlay(frame, record: dict) -> None:
         label = record["posture_label"]
-        color = (0, 0, 255) if label == "slouch" else (0, 255, 0)
         metadata = record.get("metadata", {})
+        text_color = (0, 0, 0)
         cv2.putText(
             frame,
             f"Model: {record['model_name']}",
             (16, 28),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
-            (255, 255, 255),
+            text_color,
             2,
         )
         cv2.putText(
@@ -353,7 +367,7 @@ class WebcamBenchmarkRunner:
             (16, 58),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
-            color,
+            text_color,
             2,
         )
         cv2.putText(
@@ -362,7 +376,7 @@ class WebcamBenchmarkRunner:
             (16, 88),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
-            (255, 255, 0),
+            text_color,
             2,
         )
         cv2.putText(
@@ -371,12 +385,12 @@ class WebcamBenchmarkRunner:
             (16, 118),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
-            (200, 200, 200),
+            text_color,
             2,
         )
 
         score = metadata.get("slouch_score")
-        score_thr = metadata.get("slouch_score_threshold")
+        score_thr = metadata.get("effective_slouch_threshold", metadata.get("slouch_score_threshold"))
         if score is not None and score_thr is not None:
             cv2.putText(
                 frame,
@@ -384,18 +398,90 @@ class WebcamBenchmarkRunner:
                 (16, 148),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
-                (255, 200, 120),
+                text_color,
                 2,
             )
+        blocker_should_block = metadata.get("blocker_should_block")
+        blocker_elapsed = metadata.get("blocker_condition_elapsed_seconds")
+        blocker_sustain = metadata.get("blocker_sustain_seconds")
+        blocker_active = metadata.get("blocker_active")
+        if blocker_should_block is not None and blocker_elapsed is not None and blocker_sustain is not None:
+            blocker_state = "ACTIVE" if blocker_active else ("counting" if blocker_should_block else "idle")
+            cv2.putText(
+                frame,
+                f"Blocker: {blocker_state} {float(blocker_elapsed):.2f}/{float(blocker_sustain):.2f}s",
+                (16, 178),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                text_color,
+                2,
+            )
+        decision_mode = metadata.get("decision_mode")
+        if decision_mode is not None:
+            cv2.putText(
+                frame,
+                f"Decision mode: {decision_mode}",
+                (16, 208),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                text_color,
+                2,
+            )
+        calibration_ready = metadata.get("calibration_ready")
+        if calibration_ready is False:
+            collected = metadata.get("baseline_samples_collected", 0)
+            needed = metadata.get("baseline_samples_needed", 0)
+            cv2.putText(
+                frame,
+                f"Calibrating upright baseline: {collected}/{needed}",
+                (16, 238),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                text_color,
+                2,
+            )
+        elif calibration_ready is True:
+            current_ratio = metadata.get("neck_length_ratio")
+            adjusted_vs_baseline = metadata.get("neck_length_ratio_vs_baseline_adjusted", current_ratio)
+            threshold = metadata.get("neck_length_slouch_threshold")
+            normalization_mode = metadata.get("normalization_mode")
+            ear_span = metadata.get("ear_span")
+            if (
+                current_ratio is not None
+                and adjusted_vs_baseline is not None
+                and threshold is not None
+            ):
+                cv2.putText(
+                    frame,
+                    f"NeckLen raw:{current_ratio:.3f} adj:{adjusted_vs_baseline:.3f} thr:{threshold:.3f}",
+                    (16, 238),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    text_color,
+                    2,
+                )
+                if normalization_mode is not None:
+                    extra = f"Norm:{normalization_mode}"
+                    if ear_span is not None:
+                        extra += f" earSpan:{float(ear_span):.3f}"
+                    cv2.putText(
+                        frame,
+                        extra,
+                        (16, 268),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        text_color,
+                        2,
+                    )
         side = metadata.get("selected_side")
         if side is not None:
             cv2.putText(
                 frame,
                 f"Side used: {side}",
-                (16, 178),
+                (16, 298),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
-                (200, 255, 200),
+                text_color,
                 2,
             )
 
@@ -406,20 +492,73 @@ class WebcamBenchmarkRunner:
             cv2.putText(
                 frame,
                 f"HFwd:{hfo:.2f} Lean:{lean:.1f}deg Neck:{neck:.2f}",
-                (16, 208),
+                (16, 328),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
-                (120, 220, 255),
+                text_color,
                 2,
             )
+        neck_compression = metadata.get("neck_compression")
+        chin_drop_ratio = metadata.get("chin_drop_ratio")
+        shoulder_rise_ratio = metadata.get("shoulder_rise_ratio")
+        if neck_compression is not None and chin_drop_ratio is not None and shoulder_rise_ratio is not None:
+            cv2.putText(
+                frame,
+                f"Compression:{neck_compression:.3f} ChinDrop:{chin_drop_ratio:.3f} ShoulderRise:{shoulder_rise_ratio:.3f}",
+                (16, 358),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                text_color,
+                2,
+            )
+        components = metadata.get("score_components")
+        if isinstance(components, dict):
+            neck_compression_w = components.get("neck_compression_weight")
+            chin_drop_w = components.get("chin_drop_weight")
+            shoulder_rise_w = components.get("shoulder_rise_weight")
+            neck_len_threshold = components.get("neck_length_threshold")
+            if neck_len_threshold is not None:
+                cv2.putText(
+                    frame,
+                    f"Rule: slouch if raw neckLen < {neck_len_threshold:.3f}",
+                    (16, 388),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52,
+                    text_color,
+                    2,
+                )
+            elif neck_compression_w is not None and chin_drop_w is not None and shoulder_rise_w is not None:
+                cv2.putText(
+                    frame,
+                    f"Weights Neck:{neck_compression_w:.2f} Chin:{chin_drop_w:.2f} Shoulder:{shoulder_rise_w:.2f}",
+                    (16, 328),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52,
+                    text_color,
+                    2,
+                )
+            else:
+                hfo_w = components.get("head_forward_offset_weight")
+                lean_w = components.get("torso_lean_weight")
+                neck_w = components.get("neck_drop_weight")
+                if hfo_w is not None and lean_w is not None and neck_w is not None:
+                    cv2.putText(
+                        frame,
+                        f"Weights HFwd:{hfo_w:.2f} Lean:{lean_w:.2f} Neck:{neck_w:.2f}",
+                        (16, 388),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.52,
+                        text_color,
+                        2,
+                    )
         if metadata.get("yaw_ambiguous"):
             cv2.putText(
                 frame,
                 "Head turn detected (ear overlap) - reducing slouch sensitivity",
-                (16, 238),
+                (16, 418),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.52,
-                (180, 180, 255),
+                text_color,
                 2,
             )
 
@@ -437,7 +576,7 @@ class WebcamBenchmarkRunner:
                     (x + 8, y - 8),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
-                    (0, 255, 255),
+                    text_color,
                     1,
                 )
 
@@ -453,6 +592,7 @@ class WebcamBenchmarkRunner:
         h, w, _ = frame.shape
         pad = 18
         box_h = 82
+        text_color = (0, 0, 0)
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (w, box_h), (0, 0, 0), -1)
         frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
@@ -463,7 +603,7 @@ class WebcamBenchmarkRunner:
             (pad, 34),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.95,
-            (0, 60, 255),
+            text_color,
             3,
         )
         score = md.get("slouch_score")
@@ -475,7 +615,7 @@ class WebcamBenchmarkRunner:
                 (pad, 66),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.62,
-                (255, 255, 255),
+                text_color,
                 2,
             )
 
@@ -493,7 +633,7 @@ class WebcamBenchmarkRunner:
                 (x + 8, y - 8),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.45,
-                (0, 220, 255),
+                text_color,
                 1,
             )
 

@@ -5,7 +5,11 @@ from noslouchbench.detectors.mediapipe_pose import MediaPipePostureDetector
 from noslouchbench.detectors.yolo_pose import YoloPosePostureDetector
 
 
-def build_detector(model_name: str, model_cfg: dict | None = None) -> BasePostureDetector:
+def build_detector(
+    model_name: str,
+    model_cfg: dict | None = None,
+    decision_mode: str | None = None,
+) -> BasePostureDetector:
     cfg = model_cfg or {}
     key = model_name.lower()
 
@@ -27,6 +31,7 @@ def build_detector(model_name: str, model_cfg: dict | None = None) -> BasePostur
             imgsz=int(cfg.get("imgsz", 640)),
             device=str(cfg.get("device", "cpu")),
             preferred_side=str(cfg.get("preferred_side", "auto")),
+            decision_mode=str(decision_mode or cfg.get("decision_mode", "full")),
         )
 
     if key == "openpose":
