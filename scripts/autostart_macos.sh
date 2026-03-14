@@ -46,6 +46,34 @@ shell_join() {
   printf '%s' "${out% }"
 }
 
+load_installed_run_args() {
+  if [[ ! -f "$RUNNER_SCRIPT" ]]; then
+    return 1
+  fi
+
+  local line=""
+  line="$(grep -F "noslouchbench.cli" "$RUNNER_SCRIPT" | head -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 1
+  fi
+
+  line="${line#*noslouchbench.cli }"
+  if [[ -z "$line" ]]; then
+    return 1
+  fi
+
+  local -a parsed_args=()
+  if ! eval "parsed_args=($line)"; then
+    return 1
+  fi
+
+  if [[ ${#parsed_args[@]} -eq 0 ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "${parsed_args[@]}"
+}
+
 build_runner_script() {
   local -a cmd_args=("$@")
   local -a full_cmd=("$PYTHON_BIN" -m noslouchbench.cli "${cmd_args[@]}")
@@ -116,6 +144,19 @@ start_job() {
   launchctl enable "gui/${UID_VALUE}/${LABEL}" >/dev/null 2>&1 || true
 }
 
+refresh_installation() {
+  local -a run_args=("${default_args[@]}")
+  local -a installed_args=()
+  if mapfile -t installed_args < <(load_installed_run_args); then
+    if [[ ${#installed_args[@]} -gt 0 ]]; then
+      run_args=("${installed_args[@]}")
+    fi
+  fi
+
+  build_runner_script "${run_args[@]}"
+  build_plist
+}
+
 status_job() {
   if launchctl print "gui/${UID_VALUE}/${LABEL}" >/dev/null 2>&1; then
     echo "NoSlouchBench autostart is loaded (${LABEL})."
@@ -177,8 +218,9 @@ case "$cmd" in
     echo "Installed and started LaunchAgent: $PLIST_PATH"
     ;;
   start)
+    refresh_installation
     start_job
-    echo "Started LaunchAgent: ${LABEL}"
+    echo "Refreshed and started LaunchAgent: ${LABEL}"
     ;;
   stop)
     stop_job
