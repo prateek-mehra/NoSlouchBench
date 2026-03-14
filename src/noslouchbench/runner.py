@@ -45,6 +45,7 @@ class WebcamBenchmarkRunner:
         duration_minutes: float | None = None,
         frame_skip: int = 0,
         session_tag: str | None = None,
+        target_fps: float | None = None,
     ) -> None:
         self.detector = detector
         self.model_name = model_name
@@ -60,6 +61,7 @@ class WebcamBenchmarkRunner:
         self.duration_minutes = duration_minutes
         self.frame_skip = max(frame_skip, 0)
         self.session_tag = session_tag
+        self.target_fps = float(target_fps) if target_fps and target_fps > 0 else None
 
     def run(self) -> RunArtifacts:
         session_id = self._build_session_id(self.model_name, self.session_tag)
@@ -78,6 +80,7 @@ class WebcamBenchmarkRunner:
 
         start = time.time()
         frame_idx = 0
+        last_infer_started_at: float | None = None
         latencies_ms: list[float] = []
         detected_frames = 0
         slouch_frames = 0
@@ -125,7 +128,14 @@ class WebcamBenchmarkRunner:
                     if self.frame_skip and frame_idx % (self.frame_skip + 1) != 1:
                         continue
 
+                    if self.target_fps is not None and last_infer_started_at is not None:
+                        min_interval = 1.0 / self.target_fps
+                        sleep_s = min_interval - (time.time() - last_infer_started_at)
+                        if sleep_s > 0:
+                            time.sleep(sleep_s)
+
                     ts = datetime.now(timezone.utc).isoformat()
+                    last_infer_started_at = time.time()
                     result = self.detector.infer(frame)
 
                     processed_frames += 1
