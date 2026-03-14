@@ -377,7 +377,7 @@ class WebcamBenchmarkRunner:
         if neck_len is not None and neck_len_threshold is not None:
             cv2.putText(
                 frame,
-                f"NeckLen raw: {float(neck_len):.3f}, thresh: {float(neck_len_threshold):.3f}",
+                f"NeckLen raw: {float(neck_len):.2f}, thresh: {float(neck_len_threshold):.2f}",
                 (16, 72),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
