@@ -99,10 +99,13 @@ def run_webcam(args: argparse.Namespace) -> int:
 
     beep_on_slouch = (not args.no_beep) and (not args.screen_blocker)
     lock_swipe_gesture = args.screen_blocker and (not args.no_lock_swipe_gesture)
+    target_fps = 4.0 if args.screen_blocker and not args.display else None
     if args.screen_blocker and not args.no_beep:
         print("Screen-blocker mode enabled: muting beep for blocker-only testing.")
     if lock_swipe_gesture:
         print("Screen-blocker mode: 3-finger swipe gesture will be temporarily disabled.")
+    if target_fps is not None:
+        print(f"Background performance mode: capping posture inference to {target_fps:.1f} FPS.")
 
     runner = WebcamBenchmarkRunner(
         detector=detector,
@@ -119,6 +122,7 @@ def run_webcam(args: argparse.Namespace) -> int:
         duration_minutes=args.duration_minutes,
         frame_skip=args.frame_skip,
         session_tag=args.session_tag,
+        target_fps=target_fps,
     )
 
     artifacts = runner.run()
