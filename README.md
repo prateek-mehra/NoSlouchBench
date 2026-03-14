@@ -108,6 +108,7 @@ Press `q` in the display window to stop.
 Each run generates:
 - Frame-level logs: `outputs/sessions/<session_id>.jsonl`
 - Session summary: `outputs/summaries/<session_id>.json`
+- Slouch instances + snapshots: `outputs/slouch_instances/<session_id>.json` and `outputs/slouch_instances/*.jpg`
 
 To aggregate model summaries after a week:
 
@@ -153,6 +154,10 @@ In the UI:
 - Set summaries/sessions/reports directories in the sidebar.
 - Click `Refresh Reports` to regenerate daily/weekly files.
 - View latest daily/weekly headline metrics and full tables.
+- View day-wise and week-wise slouch instances with:
+  - timestamp
+  - duration (seconds)
+  - slouch snapshot image
 
 ## Automation (cron)
 
@@ -168,6 +173,46 @@ Example crontab (local timezone):
 # Refresh local report artifacts daily at 9:00 PM
 0 21 * * * cd /Users/prateek/Downloads/_Projects/Personal/codex/NoSlouchBench && /usr/bin/env bash scripts/schedule_reports.sh >> outputs/reports/cron_reports.log 2>&1
 ```
+
+## Start In Background At Login (macOS)
+
+Use the launchd helper to keep NoSlouchBench running in the background after login and restart it automatically if it exits.
+
+Install + start with default args:
+
+```bash
+scripts/autostart_macos.sh install
+```
+
+Default run args are:
+
+```bash
+run-webcam --model yolo-pose --camera-id 0 --screen-blocker
+```
+
+Install with custom `run-webcam` args:
+
+```bash
+scripts/autostart_macos.sh install -- --camera-id 1 --model yolo-pose --screen-blocker
+```
+
+Control lifecycle:
+
+```bash
+scripts/autostart_macos.sh status
+scripts/autostart_macos.sh stop       # stop now (manual close)
+scripts/autostart_macos.sh start      # start again
+scripts/autostart_macos.sh uninstall  # remove startup entry
+```
+
+Logs are written to:
+
+```text
+outputs/startup/stdout.log
+outputs/startup/stderr.log
+```
+
+Note: startup runs through a hidden Terminal-hosted runner so macOS camera permissions are honored.
 
 ## Benchmark Metrics Tracked
 

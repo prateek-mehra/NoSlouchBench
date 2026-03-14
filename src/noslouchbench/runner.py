@@ -21,6 +21,7 @@ class RunArtifacts:
     session_id: str
     event_log_path: Path
     summary_path: Path
+    slouch_instances_path: Path
     summary: dict
 
 
@@ -64,11 +65,14 @@ class WebcamBenchmarkRunner:
         session_id = self._build_session_id(self.model_name, self.session_tag)
         sessions_dir = self.output_dir / "sessions"
         summaries_dir = self.output_dir / "summaries"
+        slouch_instances_dir = self.output_dir / "slouch_instances"
         sessions_dir.mkdir(parents=True, exist_ok=True)
         summaries_dir.mkdir(parents=True, exist_ok=True)
+        slouch_instances_dir.mkdir(parents=True, exist_ok=True)
 
         event_log_path = sessions_dir / f"{session_id}.jsonl"
         summary_path = summaries_dir / f"{session_id}.json"
+        slouch_instances_path = slouch_instances_dir / f"{session_id}.json"
 
         cap, first_frame = self._open_camera_capture()
 
@@ -84,6 +88,13 @@ class WebcamBenchmarkRunner:
         swipe_guard = None
         blocker_condition_since: float | None = None
         blocker_active = False
+        active_slouch_instance: dict | None = None
+        slouch_instances: list[dict] = []
+        def persist_slouch_instances() -> None:
+            with slouch_instances_path.open("w", encoding="utf-8") as f:
+                json.dump(slouch_instances, f, indent=2)
+
+        persist_slouch_instances()
         if self.block_screen_on_slouch:
             blocker = ScreenBlocker(opacity=self.blocker_opacity, kill_switch=self.blocker_kill_switch)
             if not blocker.available:
@@ -169,6 +180,29 @@ class WebcamBenchmarkRunner:
                     }
                     logf.write(json.dumps(record) + "\n")
 
+                    if result.posture_label == "slouch":
+                        if active_slouch_instance is None:
+                            image_name = f"{session_id}_slouch_{len(slouch_instances)+1:04d}.jpg"
+                            image_path = slouch_instances_dir / image_name
+                            labeled_frame = self._draw_slouch_snapshot_annotation(frame.copy(), result.metadata)
+                            cv2.imwrite(str(image_path), labeled_frame)
+                            active_slouch_instance = {
+                                "session_id": session_id,
+                                "start_timestamp_utc": ts,
+                                "start_frame_idx": frame_idx,
+                                "image_path": str(image_path),
+                            }
+                    elif active_slouch_instance is not None:
+                        start_ts = datetime.fromisoformat(active_slouch_instance["start_timestamp_utc"])
+                        end_ts = datetime.fromisoformat(ts)
+                        duration_seconds = max((end_ts - start_ts).total_seconds(), 0.0)
+                        active_slouch_instance["end_timestamp_utc"] = ts
+                        active_slouch_instance["end_frame_idx"] = frame_idx
+                        active_slouch_instance["duration_seconds"] = duration_seconds
+                        slouch_instances.append(active_slouch_instance)
+                        active_slouch_instance = None
+                        persist_slouch_instances()
+
                     frame_to_draw = frame.copy()
                     self._draw_overlay(frame_to_draw, record)
 
@@ -195,6 +229,20 @@ class WebcamBenchmarkRunner:
                         if elapsed_min >= self.duration_minutes:
                             break
         finally:
+            if active_slouch_instance is not None:
+                end_ts = datetime.now(timezone.utc).isoformat()
+                start_ts = datetime.fromisoformat(active_slouch_instance["start_timestamp_utc"])
+                duration_seconds = max(
+                    (datetime.fromisoformat(end_ts) - start_ts).total_seconds(),
+                    0.0,
+                )
+                active_slouch_instance["end_timestamp_utc"] = end_ts
+                active_slouch_instance["end_frame_idx"] = frame_idx
+                active_slouch_instance["duration_seconds"] = duration_seconds
+                slouch_instances.append(active_slouch_instance)
+                active_slouch_instance = None
+                persist_slouch_instances()
+
             if beeper is not None:
                 beeper.close()
             if blocker is not None:
@@ -220,11 +268,13 @@ class WebcamBenchmarkRunner:
 
         with summary_path.open("w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
+        persist_slouch_instances()
 
         return RunArtifacts(
             session_id=session_id,
             event_log_path=event_log_path,
             summary_path=summary_path,
+            slouch_instances_path=slouch_instances_path,
             summary=summary,
         )
 
@@ -396,3 +446,64 @@ class WebcamBenchmarkRunner:
         t = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         suffix = f"_{session_tag}" if session_tag else ""
         return f"{model_name}_{t}{suffix}"
+
+    @staticmethod
+    def _draw_slouch_snapshot_annotation(frame: np.ndarray, metadata: dict | None) -> np.ndarray:
+        md = metadata or {}
+        h, w, _ = frame.shape
+        pad = 18
+        box_h = 82
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, box_h), (0, 0, 0), -1)
+        frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
+
+        cv2.putText(
+            frame,
+            "BENT BACK (SLOUCH)",
+            (pad, 34),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.95,
+            (0, 60, 255),
+            3,
+        )
+        score = md.get("slouch_score")
+        thr = md.get("effective_slouch_threshold", md.get("slouch_score_threshold"))
+        if score is not None and thr is not None:
+            cv2.putText(
+                frame,
+                f"Score {float(score):.3f} > Threshold {float(thr):.3f}",
+                (pad, 66),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (255, 255, 255),
+                2,
+            )
+
+        points = md.get("landmarks_norm", {}) or {}
+        for name in ("left_ear", "right_ear", "left_shoulder", "right_shoulder"):
+            xy = points.get(name)
+            if not xy:
+                continue
+            x = int(float(xy[0]) * w)
+            y = int(float(xy[1]) * h)
+            cv2.circle(frame, (x, y), 6, (0, 220, 255), -1)
+            cv2.putText(
+                frame,
+                name.replace("_", " "),
+                (x + 8, y - 8),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 220, 255),
+                1,
+            )
+
+        side = str(md.get("selected_side", "")).lower()
+        if side in {"left", "right"}:
+            ear = points.get(f"{side}_ear")
+            shoulder = points.get(f"{side}_shoulder")
+            if ear and shoulder:
+                p1 = (int(float(ear[0]) * w), int(float(ear[1]) * h))
+                p2 = (int(float(shoulder[0]) * w), int(float(shoulder[1]) * h))
+                cv2.line(frame, p1, p2, (0, 80, 255), 3)
+
+        return frame

@@ -118,6 +118,7 @@ def run_webcam(args: argparse.Namespace) -> int:
     print(f"Session complete: {artifacts.session_id}")
     print(f"Frame logs: {artifacts.event_log_path}")
     print(f"Summary: {artifacts.summary_path}")
+    print(f"Slouch instances: {artifacts.slouch_instances_path}")
     print("Key metrics:")
     print(f"  avg latency (ms): {artifacts.summary['latency_ms_avg']:.2f}")
     print(f"  p95 latency (ms): {artifacts.summary['latency_ms_p95']:.2f}")
