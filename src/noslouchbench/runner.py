@@ -143,12 +143,20 @@ class WebcamBenchmarkRunner:
                         else:
                             beeper.stop()
                     if blocker is not None:
-                        raw_score = result.metadata.get("slouch_score")
-                        try:
-                            should_block = float(raw_score) > self.BLOCKER_SLOUCH_SCORE_THRESHOLD
-                        except (TypeError, ValueError):
-                            should_block = False
                         now_ts = time.time()
+                        neck_len = result.metadata.get("neck_length_ratio")
+                        neck_len_threshold = result.metadata.get("neck_length_slouch_threshold")
+                        if neck_len is not None and neck_len_threshold is not None:
+                            try:
+                                should_block = float(neck_len) < float(neck_len_threshold)
+                            except (TypeError, ValueError):
+                                should_block = False
+                        else:
+                            raw_score = result.metadata.get("slouch_score")
+                            try:
+                                should_block = float(raw_score) > self.BLOCKER_SLOUCH_SCORE_THRESHOLD
+                            except (TypeError, ValueError):
+                                should_block = False
 
                         if blocker.killed:
                             blocker_condition_since = None
@@ -166,6 +174,12 @@ class WebcamBenchmarkRunner:
                             if blocker_active:
                                 blocker.stop()
                                 blocker_active = False
+
+                        blocker_elapsed = 0.0 if blocker_condition_since is None else max(now_ts - blocker_condition_since, 0.0)
+                        result.metadata["blocker_should_block"] = should_block
+                        result.metadata["blocker_condition_elapsed_seconds"] = float(blocker_elapsed)
+                        result.metadata["blocker_sustain_seconds"] = float(self.BLOCKER_SUSTAIN_SECONDS)
+                        result.metadata["blocker_active"] = blocker_active
 
                     record = {
                         "timestamp_utc": ts,
@@ -336,90 +350,28 @@ class WebcamBenchmarkRunner:
     @staticmethod
     def _draw_overlay(frame, record: dict) -> None:
         label = record["posture_label"]
-        color = (0, 0, 255) if label == "slouch" else (0, 255, 0)
         metadata = record.get("metadata", {})
+        posture_color = (0, 0, 255) if label == "slouch" else (0, 255, 0)
+        text_color = (0, 0, 0)
         cv2.putText(
             frame,
-            f"Model: {record['model_name']}",
-            (16, 28),
+            f"Posture: {label}",
+            (16, 36),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (255, 255, 255),
+            0.75,
+            posture_color,
             2,
         )
-        cv2.putText(
-            frame,
-            f"Posture: {label} ({record['confidence']:.2f})",
-            (16, 58),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            color,
-            2,
-        )
-        cv2.putText(
-            frame,
-            f"Latency: {record['latency_ms']:.1f} ms",
-            (16, 88),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (255, 255, 0),
-            2,
-        )
-        cv2.putText(
-            frame,
-            "Press q to stop",
-            (16, 118),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (200, 200, 200),
-            2,
-        )
-
-        score = metadata.get("slouch_score")
-        score_thr = metadata.get("slouch_score_threshold")
-        if score is not None and score_thr is not None:
+        neck_len = metadata.get("neck_length_ratio")
+        neck_len_threshold = metadata.get("neck_length_slouch_threshold")
+        if neck_len is not None and neck_len_threshold is not None:
             cv2.putText(
                 frame,
-                f"SlouchScore: {score:.3f} (thr {score_thr:.3f})",
-                (16, 148),
+                f"NeckLen raw: {float(neck_len):.3f}, thresh: {float(neck_len_threshold):.3f}",
+                (16, 72),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (255, 200, 120),
-                2,
-            )
-        side = metadata.get("selected_side")
-        if side is not None:
-            cv2.putText(
-                frame,
-                f"Side used: {side}",
-                (16, 178),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (200, 255, 200),
-                2,
-            )
-
-        hfo = metadata.get("head_forward_offset")
-        lean = metadata.get("torso_lean_angle_deg")
-        neck = metadata.get("neck_drop")
-        if hfo is not None and lean is not None and neck is not None:
-            cv2.putText(
-                frame,
-                f"HFwd:{hfo:.2f} Lean:{lean:.1f}deg Neck:{neck:.2f}",
-                (16, 208),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (120, 220, 255),
-                2,
-            )
-        if metadata.get("yaw_ambiguous"):
-            cv2.putText(
-                frame,
-                "Head turn detected (ear overlap) - reducing slouch sensitivity",
-                (16, 238),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.52,
-                (180, 180, 255),
+                0.6,
+                text_color,
                 2,
             )
 
@@ -437,7 +389,7 @@ class WebcamBenchmarkRunner:
                     (x + 8, y - 8),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
-                    (0, 255, 255),
+                    text_color,
                     1,
                 )
 
@@ -453,6 +405,7 @@ class WebcamBenchmarkRunner:
         h, w, _ = frame.shape
         pad = 18
         box_h = 82
+        text_color = (0, 0, 0)
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (w, box_h), (0, 0, 0), -1)
         frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
@@ -463,7 +416,7 @@ class WebcamBenchmarkRunner:
             (pad, 34),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.95,
-            (0, 60, 255),
+            text_color,
             3,
         )
         score = md.get("slouch_score")
@@ -475,7 +428,7 @@ class WebcamBenchmarkRunner:
                 (pad, 66),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.62,
-                (255, 255, 255),
+                text_color,
                 2,
             )
 
@@ -493,7 +446,7 @@ class WebcamBenchmarkRunner:
                 (x + 8, y - 8),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.45,
-                (0, 220, 255),
+                text_color,
                 1,
             )
 

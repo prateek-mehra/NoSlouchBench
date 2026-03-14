@@ -9,6 +9,8 @@ from noslouchbench.detectors.base import BasePostureDetector, DetectionResult
 
 class YoloPosePostureDetector(BasePostureDetector):
     name = "yolo-pose"
+    FRONTAL_BASELINE_MIN_SAMPLES = 20
+    FRONTAL_NECKLEN_SLOUCH_THRESHOLD = 2.3
 
     # COCO keypoints used by YOLO pose models.
     KP_LEFT_EAR = 3
@@ -28,6 +30,7 @@ class YoloPosePostureDetector(BasePostureDetector):
         imgsz: int = 640,
         device: str = "cpu",
         preferred_side: str = "auto",
+        decision_mode: str = "full",
     ) -> None:
         try:
             from ultralytics import YOLO
@@ -48,6 +51,12 @@ class YoloPosePostureDetector(BasePostureDetector):
         if side not in {"auto", "left", "right"}:
             side = "auto"
         self.preferred_side = side
+        mode = (decision_mode or "full").lower()
+        if mode not in {"full", "neck-forward", "frontal-neck-baseline"}:
+            mode = "full"
+        self.decision_mode = mode
+        self.frontal_baseline_samples: list[float] = []
+        self.frontal_baseline_value: float | None = None
 
     def infer(self, frame_bgr: np.ndarray) -> DetectionResult:
         t0 = time.perf_counter()
@@ -107,6 +116,12 @@ class YoloPosePostureDetector(BasePostureDetector):
             "left_hip": point(self.KP_LEFT_HIP),
             "right_hip": point(self.KP_RIGHT_HIP),
         }
+
+        if self.decision_mode == "frontal-neck-baseline":
+            return self._infer_frontal_neck_baseline(
+                tracked=tracked,
+                latency_ms=latency_ms,
+            )
 
         left_upper_ok = min(
             tracked["left_ear"][2], tracked["left_shoulder"][2]
@@ -203,12 +218,17 @@ class YoloPosePostureDetector(BasePostureDetector):
                     },
                 )
 
-        # Shoulder/face-focused scoring:
-        # prioritize ear-to-shoulder forward displacement and neck drop,
-        # while keeping torso-lean as a weaker supplemental cue.
-        slouch_score = 0.62 * head_forward_offset + 0.10 * torso_lean_norm + 0.28 * neck_drop
-        if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
-            slouch_score *= 0.55
+        if self.decision_mode == "neck-forward":
+            slouch_score = 0.72 * head_forward_offset + 0.28 * neck_drop
+            if yaw_ambiguous and neck_drop < 0.12:
+                slouch_score *= 0.55
+        else:
+            # Shoulder/face-focused scoring:
+            # prioritize ear-to-shoulder forward displacement and neck drop,
+            # while keeping torso-lean as a weaker supplemental cue.
+            slouch_score = 0.62 * head_forward_offset + 0.10 * torso_lean_norm + 0.28 * neck_drop
+            if yaw_ambiguous and neck_drop < 0.12 and torso_lean_norm < 0.25:
+                slouch_score *= 0.55
 
         # Make detection stricter (more sensitive) when hips are not visible,
         # since webcam framing is often upper-body only.
@@ -237,14 +257,115 @@ class YoloPosePostureDetector(BasePostureDetector):
                 "torso_lean_angle_deg": float(torso_lean_angle_deg),
                 "neck_drop": float(neck_drop),
                 "torso_len": float(torso_len),
+                "decision_mode": self.decision_mode,
                 "scale_source": scale_source,
                 "lean_source": lean_source,
                 "yaw_ambiguous": yaw_ambiguous,
                 "ear_sep_ratio": float(ear_sep_ratio),
                 "selected_side": side,
                 "preferred_side": self.preferred_side,
+                "score_components": {
+                    "head_forward_offset_weight": 0.72 if self.decision_mode == "neck-forward" else 0.62,
+                    "torso_lean_weight": 0.0 if self.decision_mode == "neck-forward" else 0.10,
+                    "neck_drop_weight": 0.28,
+                },
                 "backend": "yolo-pose",
                 "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
+            },
+        )
+
+    def _infer_frontal_neck_baseline(
+        self,
+        tracked: dict[str, tuple[float, float, float]],
+        latency_ms: float,
+    ) -> DetectionResult:
+        left_ear = tracked["left_ear"]
+        right_ear = tracked["right_ear"]
+        left_shoulder = tracked["left_shoulder"]
+        right_shoulder = tracked["right_shoulder"]
+
+        frontal_ready = min(
+            left_ear[2],
+            right_ear[2],
+            left_shoulder[2],
+            right_shoulder[2],
+        ) >= self.min_visibility
+        if not frontal_ready:
+            return DetectionResult(
+                detected=False,
+                posture_label="unknown",
+                confidence=0.0,
+                latency_ms=latency_ms,
+                metadata={
+                    "reason": "insufficient_frontal_landmarks",
+                    "decision_mode": self.decision_mode,
+                    "calibration_ready": False,
+                    "baseline_samples_collected": len(self.frontal_baseline_samples),
+                    "baseline_samples_needed": self.FRONTAL_BASELINE_MIN_SAMPLES,
+                    "backend": "yolo-pose",
+                    "landmarks_norm": {k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
+                },
+            )
+
+        ear_mid_x = (left_ear[0] + right_ear[0]) * 0.5
+        ear_mid_y = (left_ear[1] + right_ear[1]) * 0.5
+        shoulder_mid_x = (left_shoulder[0] + right_shoulder[0]) * 0.5
+        shoulder_mid_y = (left_shoulder[1] + right_shoulder[1]) * 0.5
+        ear_span = max(abs(right_ear[0] - left_ear[0]), 1e-4)
+        shoulder_width = max(abs(right_shoulder[0] - left_shoulder[0]), 1e-4)
+        yaw_ambiguous = (ear_span / shoulder_width) < 0.38
+
+        neck_dx = ear_mid_x - shoulder_mid_x
+        neck_dy = shoulder_mid_y - ear_mid_y
+        raw_neck_length = float(np.hypot(neck_dx, neck_dy))
+        neck_length_ratio = raw_neck_length / ear_span
+        chin_drop_ratio = max(0.0, ear_mid_y - min(left_shoulder[1], right_shoulder[1])) / ear_span
+        shoulder_rise_ratio = max(0.0, 0.5 - shoulder_mid_y) / ear_span
+
+        neck_len_threshold = self.FRONTAL_NECKLEN_SLOUCH_THRESHOLD
+        adjusted_neck_len = neck_length_ratio * (0.92 if yaw_ambiguous else 1.0)
+        neck_compression = max(0.0, neck_len_threshold - adjusted_neck_len)
+        slouch_score = neck_compression
+
+        effective_threshold = 0.0
+        posture_label = "slouch" if adjusted_neck_len < neck_len_threshold else "upright"
+        confidence = float(
+            min(max(abs(adjusted_neck_len - neck_len_threshold) / max(neck_len_threshold, 1e-4), 0.0), 1.0)
+        )
+
+        return DetectionResult(
+            detected=True,
+            posture_label=posture_label,
+            confidence=confidence,
+            latency_ms=latency_ms,
+            metadata={
+                "slouch_score": float(slouch_score),
+                "slouch_score_threshold": float(self.slouch_threshold),
+                "effective_slouch_threshold": float(effective_threshold),
+                "decision_mode": self.decision_mode,
+                "calibration_ready": True,
+                "neck_length_ratio": float(neck_length_ratio),
+                "neck_length_ratio_vs_baseline": float(neck_length_ratio),
+                "neck_length_ratio_vs_baseline_adjusted": float(adjusted_neck_len),
+                "neck_length_slouch_threshold": float(neck_len_threshold),
+                "neck_compression": float(neck_compression),
+                "chin_drop_ratio": float(chin_drop_ratio),
+                "shoulder_rise_ratio": float(shoulder_rise_ratio),
+                "yaw_ambiguous": yaw_ambiguous,
+                "normalization_mode": "ear_span",
+                "ear_span": float(ear_span),
+                "shoulder_width": float(shoulder_width),
+                "selected_side": "frontal",
+                "preferred_side": self.preferred_side,
+                "score_components": {
+                    "neck_length_threshold": float(neck_len_threshold),
+                },
+                "backend": "yolo-pose",
+                "landmarks_norm": {
+                    **{k: [float(v[0]), float(v[1])] for k, v in tracked.items()},
+                    "ear_midpoint": [float(ear_mid_x), float(ear_mid_y)],
+                    "shoulder_midpoint": [float(shoulder_mid_x), float(shoulder_mid_y)],
+                },
             },
         )
 
